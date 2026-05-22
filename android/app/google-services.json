@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "263469891035",
+    "project_id": "quiniela-mundial-2026-3e2b7",
+    "storage_bucket": "quiniela-mundial-2026-3e2b7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:263469891035:android:6ec8205e7bb2aa873b7bfe",
+        "android_client_info": {
+          "package_name": "com.example.quiniela_2026"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "263469891035-adftpbi7h6hth5kicrch7tn2h14s8ec9.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDPsiz_QPaKqj0LRzOeXvVESCpNn8EukyM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "263469891035-adftpbi7h6hth5kicrch7tn2h14s8ec9.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
