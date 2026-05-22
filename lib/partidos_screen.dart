@@ -146,21 +146,28 @@ class _ResumenUsuarioHeader extends StatelessWidget {
   }
 }
 
-// --- WIDGET 2: LISTA DE PARTIDOS FILTRADA CON ACORDEÓN PARA GRUPOS ---
-class _ListaPartidosFiltrada extends StatelessWidget {
+// --- WIDGET 2: LISTA DE PARTIDOS FILTRADA CON SELECTOR DE VISTA (GRUPO / JORNADA) ---
+// --- WIDGET 2: LISTA DE PARTIDOS FILTRADA CON DOBLE ACORDEÓN (GRUPOS Y JORNADAS) ---
+class _ListaPartidosFiltrada extends StatefulWidget {
   final String uidUsuario;
   final String tipoFase;
 
   const _ListaPartidosFiltrada({required this.uidUsuario, required this.tipoFase});
 
   @override
+  State<_ListaPartidosFiltrada> createState() => _ListaPartidosFiltradaState();
+}
+
+class _ListaPartidosFiltradaState extends State<_ListaPartidosFiltrada> {
+  bool _verPorJornada = false;
+
+  @override
   Widget build(BuildContext context) {
     Query query = FirebaseFirestore.instance.collection('partidos');
 
-    // Mantenemos los filtros generales por pestañas
-    if (tipoFase == 'Grupos') {
+    if (widget.tipoFase == 'Grupos') {
       query = query.where('fase', isGreaterThanOrEqualTo: 'Matchday').where('fase', isLessThanOrEqualTo: 'Matchday 9');
-    } else if (tipoFase == 'Eliminatorias') {
+    } else if (widget.tipoFase == 'Eliminatorias') {
       query = query.where('fase', whereIn: ['Round of 32', 'Round of 16']);
     } else {
       query = query.where('fase', whereIn: ['Quarter-final', 'Semi-final', 'Match for third place', 'Final']);
@@ -174,79 +181,170 @@ class _ListaPartidosFiltrada extends StatelessWidget {
 
         final partidosDocs = snapshot.data?.docs ?? [];
         
-        // Ordenamos cronológicamente en memoria por ID
-        partidosDocs.sort((a, b) => (a.data() as Map)['id'].compareTo((b.data() as Map)['id']));
+        // 1. ORDENAMIENTO CRONOLÓGICO BASE (Fecha y Hora)
+        partidosDocs.sort((a, b) {
+          final dataA = a.data() as Map<String, dynamic>;
+          final dataB = b.data() as Map<String, dynamic>;
+
+          String fechaA = dataA['fecha'] ?? '';
+          String fechaB = dataB['fecha'] ?? '';
+          int compFecha = fechaA.compareTo(fechaB);
+
+          if (compFecha == 0) {
+            String horaA = dataA['hora'] ?? '';
+            String horaB = dataB['hora'] ?? '';
+            return horaA.compareTo(horaB);
+          }
+          return compFecha;
+        });
 
         if (partidosDocs.isEmpty) {
-          return const Center(child: Text('No hay partidos programados para esta fase.', style: TextStyle(color: Colors.grey)));
+          return const Center(child: Text('No hay partidos en esta fase.', style: TextStyle(color: Colors.grey)));
         }
 
-        // === CASO 1: PESTAÑA DE GRUPOS (Agrupación por letras A-L) ===
-        if (tipoFase == 'Grupos') {
-          // Organizamos los partidos en un Mapa donde la llave es el Grupo (ej: 'Group A')
-          Map<String, List<Map<String, dynamic>>> partidosPorGrupo = {};
+        // === FASE DE GRUPOS ACTIVADA ===
+        if (widget.tipoFase == 'Grupos') {
+          
+          // --- MODO 1: VISTA POR JORNADA (AGRUPADA EN ACORDEONES) ---
+          if (_verPorJornada) {
+            Map<String, List<Map<String, dynamic>>> partidosPorJornada = {};
+            
+            for (var doc in partidosDocs) {
+              final partido = doc.data() as Map<String, dynamic>;
+              final String faseOriginal = partido['fase'] ?? 'Otros';
+              // Traducimos al vuelo para agrupar bajo la misma llave en español
+              final String jornadaTraducida = faseOriginal.replaceAll('Matchday', 'Jornada');
+              
+              if (!partidosPorJornada.containsKey(jornadaTraducida)) {
+                partidosPorJornada[jornadaTraducida] = [];
+              }
+              partidosPorJornada[jornadaTraducida]!.add(partido);
+            }
 
+            // Obtenemos las llaves de las jornadas ordenadas de forma natural
+            final listaJornadas = partidosPorJornada.keys.toList()
+              ..sort((a, b) {
+                // Extrayendo el número para que ordene numéricamente (Jornada 2 antes de Jornada 10)
+                int numA = int.parse(a.replaceAll(RegExp(r'[^0-9]'), ''));
+                int numB = int.parse(b.replaceAll(RegExp(r'[^0-9]'), ''));
+                return numA.compareTo(numB);
+              });
+
+            return Column(
+              children: [
+                _buildSelectorBar(),
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.only(top: 0, bottom: 80),
+                    itemCount: listaJornadas.length,
+                    itemBuilder: (context, index) {
+                      final String nombreJornada = listaJornadas[index];
+                      final List<Map<String, dynamic>> partidosDeLaJornada = partidosPorJornada[nombreJornada]!;
+
+                      return Card(
+                        margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                        elevation: 1,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        child: ExpansionTile(
+                          title: Text(nombreJornada, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange.shade900, fontSize: 15)),
+                          leading: const Icon(Icons.calendar_month, color: Colors.orange),
+                          trailing: Text('${partidosDeLaJornada.length} partidos', style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                          children: partidosDeLaJornada.map((partido) {
+                            return TarjetaPartido(partido: partido, uidUsuario: widget.uidUsuario);
+                          }).toList(),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            );
+          }
+
+          // --- MODO 2: VISTA POR GRUPOS (AGRUPADA EN ACORDEONES) ---
+          Map<String, List<Map<String, dynamic>>> partidosPorGrupo = {};
           for (var doc in partidosDocs) {
             final partido = doc.data() as Map<String, dynamic>;
             final String grupo = partido['grupo'] ?? 'Otros';
-            if (!partidosPorGrupo.containsKey(grupo)) {
-              partidosPorGrupo[grupo] = [];
-            }
+            if (!partidosPorGrupo.containsKey(grupo)) partidosPorGrupo[grupo] = [];
             partidosPorGrupo[grupo]!.add(partido);
           }
 
-          // Obtenemos las llaves ordenadas (Group A, Group B, etc.)
           final listaGrupos = partidosPorGrupo.keys.toList()..sort();
 
-          return ListView.builder(
-            // padding: const EdgeInsets.symmetric(vertical: 8),
-            padding: const EdgeInsets.only(top: 8, bottom: 80),
-            itemCount: listaGrupos.length,
-            itemBuilder: (context, index) {
-              final String nombreGrupo = listaGrupos[index];
-              final List<Map<String, dynamic>> partidosDelGrupo = partidosPorGrupo[nombreGrupo]!;
+          return Column(
+            children: [
+              _buildSelectorBar(),
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.only(top: 0, bottom: 80),
+                  itemCount: listaGrupos.length,
+                  itemBuilder: (context, index) {
+                    final String nombreGrupo = listaGrupos[index];
+                    final List<Map<String, dynamic>> partidosDelGrupo = partidosPorGrupo[nombreGrupo]!;
+                    final String nombreMostrado = nombreGrupo.replaceAll('Group', 'Grupo');
 
-              // Traducimos de 'Group A' a 'Grupo A' para la interfaz familiar
-              final String nombreMostrado = nombreGrupo.replaceAll('Group', 'Grupo');
-
-              return Card(
-                margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                elevation: 1,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                child: ExpansionTile(
-                  title: Text(
-                    nombreMostrado,
-                    style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade900, fontSize: 16),
-                  ),
-                  leading: const Icon(Icons.sports_soccer, color: Colors.blue),
-                  // Muestra cuántos partidos tiene asignados el grupo
-                  trailing: Text('${partidosDelGrupo.length} partidos', style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                  children: partidosDelGrupo.map((partido) {
-                    return TarjetaPartido(partido: partido, uidUsuario: uidUsuario);
-                  }).toList(),
+                    return Card(
+                      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                      elevation: 1,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      child: ExpansionTile(
+                        title: Text(nombreMostrado, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade900, fontSize: 15)),
+                        leading: const Icon(Icons.sports_soccer, color: Colors.blue),
+                        trailing: Text('${partidosDelGrupo.length} partidos', style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                        children: partidosDelGrupo.map((partido) {
+                          return TarjetaPartido(partido: partido, uidUsuario: widget.uidUsuario);
+                        }).toList(),
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
+              ),
+            ],
           );
         }
 
-
-
-
-
-        // === CASO 2: OTRAS PESTAÑAS (Lista plana normal para fases finales) ===
+        // === OTRAS PESTAÑAS (FASES FINALES - LISTA PLANAL NORMAL) ===
         return ListView.builder(
-          padding: const EdgeInsets.only(top: 8, bottom: 16),
+          padding: const EdgeInsets.only(top: 8, bottom: 80),
           itemCount: partidosDocs.length,
           itemBuilder: (context, index) {
             final partido = partidosDocs[index].data() as Map<String, dynamic>;
-            return TarjetaPartido(partido: partido, uidUsuario: uidUsuario);
+            return TarjetaPartido(partido: partido, uidUsuario: widget.uidUsuario);
           },
         );
       },
     );
   }
+
+  Widget _buildSelectorBar() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            _verPorJornada ? '📅 Agrupado por Jornada' : '🗂️ Agrupado por Grupos',
+            style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black54, fontSize: 13),
+          ),
+          ActionChip(
+            avatar: Icon(_verPorJornada ? Icons.grid_view : Icons.calendar_month, size: 16, color: Colors.black87),
+            backgroundColor: _verPorJornada ? Colors.amber.shade200 : Colors.blue.shade50,
+            label: Text(_verPorJornada ? 'Ver Grupos' : 'Ver Jornadas', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            onPressed: () {
+              setState(() {
+                _verPorJornada = !_verPorJornada;
+              });
+            },
+          ),
+        ],
+      ),
+    );
+  }
 }
+
+
+
 
 // --- WIDGET 3: TARJETA DE PARTIDO MODERNA ---
 class TarjetaPartido extends StatefulWidget {
