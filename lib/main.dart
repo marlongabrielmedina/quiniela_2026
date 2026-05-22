@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; // Importación vital para leer los roles y códigos de liga
 import 'firebase_options.dart';
 import 'login_screen.dart';
-import 'partidos_screen.dart'; // Importamos la pantalla principal
+import 'partidos_screen.dart'; 
+import 'codigo_screen.dart'; // Importación de la nueva pantalla intermedia
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,24 +29,39 @@ class MiQuinielaApp extends StatelessWidget {
         primarySwatch: Colors.blue,
         useMaterial3: true,
       ),
-      // === EL VIGILANTE DE SESIÓN ===
       home: StreamBuilder<User?>(
-        // Escucha en tiempo real si el usuario está logueado o no en el dispositivo
         stream: FirebaseAuth.instance.authStateChanges(),
         builder: (context, snapshot) {
-          // Mientras Firebase averigua si hay sesión activa, muestra una ruedita de carga
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
+            return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          }
+
+          // Si hay sesión activa, investigamos su documento en Firestore
+          if (snapshot.hasData && snapshot.data != null) {
+            return FutureBuilder<DocumentSnapshot>(
+              future: FirebaseFirestore.instance.collection('usuarios').doc(snapshot.data!.uid).get(),
+              builder: (context, userSnapshot) {
+                if (userSnapshot.connectionState == ConnectionState.waiting) {
+                  return const Scaffold(body: Center(child: CircularProgressIndicator()));
+                }
+
+                if (userSnapshot.hasData && userSnapshot.data!.exists) {
+                  final datos = userSnapshot.data!.data() as Map<String, dynamic>;
+                  
+                  // Si NO tiene el campo 'codigoLiga' o está vacío, lo mandamos a pedir el código
+                  if (datos['codigoLiga'] == null || datos['codigoLiga'].toString().isEmpty) {
+                    return const CodigoScreen();
+                  }
+
+                  // Si ya tiene código de liga, va directo al Dashboard
+                  return const PartidosScreen();
+                }
+
+                return const LoginScreen();
+              },
             );
           }
 
-          // Si snapshot tiene datos, significa que ya hay una sesión activa en el teléfono
-          if (snapshot.hasData && snapshot.data != null) {
-            return const PartidosScreen(); // Entra directo sin preguntar
-          }
-
-          // Si no hay datos, es porque no ha iniciado sesión o cerró sesión
           return const LoginScreen();
         },
       ),

@@ -4,15 +4,70 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class AdminScreen extends StatelessWidget {
   const AdminScreen({super.key});
 
+  // 🛠️ FUNCIÓN PARA MOSTRAR EL DIÁLOGO DE CREACIÓN DE LIGAS OFICIALES
+  void _mostrarDialogoLigas(BuildContext context) {
+    final TextEditingController ligaCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('🏆 Crear Liga Oficial', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: ligaCtrl,
+                textCapitalization: TextCapitalization.characters,
+                decoration: const InputDecoration(
+                  labelText: 'Código / Nombre de la Liga',
+                  hintText: 'EJ: FAMILIA, IGLESIA, TRABAJO',
+                  prefixIcon: Icon(Icons.shield),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar', style: TextStyle(color: Colors.grey))),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade800, foregroundColor: Colors.white),
+              onPressed: () async {
+                final String nombreLiga = ligaCtrl.text.trim().toUpperCase();
+                if (nombreLiga.isEmpty) return;
+
+                Navigator.pop(context);
+                
+                // Guardamos la liga como un documento oficial en Firestore
+                await FirebaseFirestore.instance.collection('ligas').doc(nombreLiga).set({
+                  'nombre': nombreLiga,
+                  'fechaCreacion': FieldValue.serverTimestamp(),
+                });
+              },
+              child: const Text('Crear Liga'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3, // Tres pestañas organizadas para el administrador
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('⚙️ Panel de Control Admin'),
           backgroundColor: Colors.red.shade800,
           foregroundColor: Colors.white,
+          // 👇 AGREGAMOS EL BOTÓN PARA CREAR LIGAS EN EL APPBAR
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.settings_suggest, color: Colors.white),
+              tooltip: 'Gestionar Ligas',
+              onPressed: () => _mostrarDialogoLigas(context),
+            )
+          ],
           bottom: const TabBar(
             labelColor: Colors.white,
             unselectedLabelColor: Colors.white70,
