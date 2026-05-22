@@ -36,7 +36,7 @@ class AdminScreen extends StatelessWidget {
   }
 }
 
-// --- WIDGET DE SOPORTE: FILTRADO Y AGRUPACIÓN DE PARTIDOS EN ADMIN (CON DOBLE VISTA) ---
+// --- WIDGET DE SOPORTE: FILTRADO Y AGRUPACIÓN DE PARTIDOS EN ADMIN (VERSION FINAL PULIDA) ---
 class _ListaPartidosAdmin extends StatefulWidget {
   final String tipoFase;
   const _ListaPartidosAdmin({super.key, required this.tipoFase});
@@ -46,7 +46,6 @@ class _ListaPartidosAdmin extends StatefulWidget {
 }
 
 class _ListaPartidosAdminState extends State<_ListaPartidosAdmin> {
-  // false = Ordenar por Grupo (A-L) | true = Ordenar por Jornada (Fecha)
   bool _verPorJornada = false;
 
   @override
@@ -90,13 +89,20 @@ class _ListaPartidosAdminState extends State<_ListaPartidosAdmin> {
           return const Center(child: Text('No hay partidos en esta fase.', style: TextStyle(color: Colors.grey)));
         }
 
-        // === FASE DE GRUPOS ACTIVADA EN PANEL ADMIN ===
+        // Traduce las fases que vienen del JSON a un español limpio y futbolero para los acordeones
+        String traducirFase(String faseOriginal) {
+          switch (faseOriginal.trim()) {
+            case 'Round of 32': return 'Dieciseisavos de Final';
+            case 'Round of 16': return 'Octavos de Final';
+            default: return faseOriginal;
+          }
+        }
+
+        // === CASO 1: PESTAÑA DE GRUPOS ACTIVADA ===
         if (widget.tipoFase == 'Grupos') {
-          
-          // --- MODO 1: VISTA POR JORNADA EN ADMIN (ACORDEONES NARANJAS/ROJOS) ---
+          // --- MODO 1.1: VISTA POR JORNADA EN ADMIN ---
           if (_verPorJornada) {
             Map<String, List<Map<String, dynamic>>> partidosPorJornada = {};
-            
             for (var doc in partidosDocs) {
               final partido = doc.data() as Map<String, dynamic>;
               final String faseOriginal = partido['fase'] ?? 'Otros';
@@ -108,7 +114,6 @@ class _ListaPartidosAdminState extends State<_ListaPartidosAdmin> {
               partidosPorJornada[jornadaTraducida]!.add(partido);
             }
 
-            // Ordenamiento numérico estricto de las jornadas (1 al 17)
             final listaJornadas = partidosPorJornada.keys.toList()
               ..sort((a, b) {
                 int numA = int.parse(a.replaceAll(RegExp(r'[^0-9]'), ''));
@@ -147,7 +152,7 @@ class _ListaPartidosAdminState extends State<_ListaPartidosAdmin> {
             );
           }
 
-          // --- MODO 2: VISTA POR GRUPOS EN ADMIN (ACORDEONES ROJOS DE TORNEO) ---
+          // --- MODO 1.2: VISTA POR GRUPOS EN ADMIN ---
           Map<String, List<Map<String, dynamic>>> partidosPorGrupo = {};
           for (var doc in partidosDocs) {
             final partido = doc.data() as Map<String, dynamic>;
@@ -190,7 +195,51 @@ class _ListaPartidosAdminState extends State<_ListaPartidosAdmin> {
           );
         }
 
-        // === OTRAS PESTAÑAS (FASES FINALES EN ADMIN) ===
+        // === CASO 2: PESTAÑA DE 16AVOS Y 8VOS (NUEVA AGRUPACIÓN POR FASE) ===
+        if (widget.tipoFase == 'Eliminatorias') {
+          Map<String, List<Map<String, dynamic>>> partidosPorFaseEliminatoria = {};
+          
+          for (var doc in partidosDocs) {
+            final partido = doc.data() as Map<String, dynamic>;
+            final String faseOriginal = partido['fase'] ?? 'Otros';
+            final String faseTraducida = traducirFase(faseOriginal);
+
+            if (!partidosPorFaseEliminatoria.containsKey(faseTraducida)) {
+              partidosPorFaseEliminatoria[faseTraducida] = [];
+            }
+            partidosPorFaseEliminatoria[faseTraducida]!.add(partido);
+          }
+
+          // Forzamos el orden para que aparezcan primero los 16avos y luego los 8vos
+          final listaFases = ['Dieciseisavos de Final', 'Octavos de Final']
+              .where((fase) => partidosPorFaseEliminatoria.containsKey(fase))
+              .toList();
+
+          return ListView.builder(
+            padding: const EdgeInsets.only(top: 8, bottom: 40),
+            itemCount: listaFases.length,
+            itemBuilder: (context, index) {
+              final String nombreFase = listaFases[index];
+              final List<Map<String, dynamic>> partidosDeLaFase = partidosPorFaseEliminatoria[nombreFase]!;
+
+              return Card(
+                margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                elevation: 1,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                child: ExpansionTile(
+                  title: Text(nombreFase, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red.shade900, fontSize: 15)),
+                  leading: const Icon(Icons.gavel_outlined, color: Colors.red), // Icono de eliminación directa
+                  trailing: Text('${partidosDeLaFase.length} partidos', style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                  children: partidosDeLaFase.map((partido) {
+                    return TarjetaPartidoAdmin(partido: partido);
+                  }).toList(),
+                ),
+              );
+            },
+          );
+        }
+
+        // === CASO 3: PESTAÑA DE FINALES (Mantiene lista corrida por ser pocos partidos) ===
         return ListView.builder(
           padding: const EdgeInsets.only(top: 8, bottom: 40),
           itemCount: partidosDocs.length,
@@ -203,7 +252,6 @@ class _ListaPartidosAdminState extends State<_ListaPartidosAdmin> {
     );
   }
 
-  // Barra selectora superior exclusiva del panel de administración
   Widget _buildSelectorBarAdmin() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
@@ -230,7 +278,7 @@ class _ListaPartidosAdminState extends State<_ListaPartidosAdmin> {
   }
 }
 
-// --- WIDGET DE SOPORTE: TARJETA DE MARCADOR OFICIAL CON AUTO-GUARDADO ---
+// --- WIDGET DE SOPORTE: TARJETA DE MARCADOR OFICIAL CON EDICIÓN DE EQUIPOS PARA FASES FINALES ---
 class TarjetaPartidoAdmin extends StatefulWidget {
   final Map<String, dynamic> partido;
   const TarjetaPartidoAdmin({super.key, required this.partido});
@@ -250,7 +298,6 @@ class _TarjetaPartidoAdminState extends State<TarjetaPartidoAdmin> {
     final local = widget.partido['local'];
     final visitante = widget.partido['visitante'];
     
-    // Si el partido ya se jugó, precargamos el marcador oficial en los campos
     if (widget.partido['jugado'] == true) {
       _localController.text = local['goles'].toString();
       _visitanteController.text = visitante['goles'].toString();
@@ -265,7 +312,6 @@ class _TarjetaPartidoAdminState extends State<TarjetaPartidoAdmin> {
   }
 
   Future<void> _guardarResultadoOficial() async {
-    // Si borran o dejan vacío un marcador, no hacemos nada
     if (_localController.text.isEmpty || _visitanteController.text.isEmpty) return;
 
     setState(() => _guardando = true);
@@ -273,18 +319,69 @@ class _TarjetaPartidoAdminState extends State<TarjetaPartidoAdmin> {
     int golesLocal = int.parse(_localController.text);
     int golesVisitante = int.parse(_visitanteController.text);
 
-    // Actualizamos el partido directamente en Firestore
     await FirebaseFirestore.instance.collection('partidos').doc(widget.partido['id']).update({
       'jugado': true,
       'local.goles': golesLocal,
       'visitante.goles': golesVisitante,
     });
 
-    // 💡 AQUÍ SE DISPARARÍA TU LÓGICA / FUNCIÓN PARA RECALCULAR PUNTOS
-    // (Ej: actualizarPrediccionesYTablaDePosiciones(widget.partido['id'], golesLocal, golesVisitante);)
-
     await Future.delayed(const Duration(milliseconds: 300));
     if (mounted) setState(() => _guardando = false);
+  }
+
+  // 🛠️ FUNCIÓN PARA MOSTRAR EL DIÁLOGO DE EDICIÓN DE EQUIPOS (OPCIÓN B)
+  void _mostrarDialogoEditarEquipos() {
+    final TextEditingController localNombreCtrl = TextEditingController(text: widget.partido['local']['nombre']);
+    final TextEditingController visitanteNombreCtrl = TextEditingController(text: widget.partido['visitante']['nombre']);
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Definir Cruce: ID ${widget.partido['id']}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: localNombreCtrl,
+                decoration: const InputDecoration(labelText: 'Equipo Local (Ej: Guatemala)', prefixIcon: Icon(Icons.flag_outlined)),
+              ),
+              const SizedBox(height: 12),
+              const Text('vs', style: TextStyle(color: Colors.grey)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: visitanteNombreCtrl,
+                decoration: const InputDecoration(labelText: 'Equipo Visitante (Ej: Argentina)', prefixIcon: Icon(Icons.flag_outlined)),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade800, foregroundColor: Colors.white),
+              onPressed: () async {
+                if (localNombreCtrl.text.trim().isEmpty || visitanteNombreCtrl.text.trim().isEmpty) return;
+                
+                Navigator.pop(context);
+                setState(() => _guardando = true);
+
+                // Actualizamos únicamente los nombres de los contrincantes en Firestore
+                await FirebaseFirestore.instance.collection('partidos').doc(widget.partido['id']).update({
+                  'local.nombre': localNombreCtrl.text.trim(),
+                  'visitante.nombre': visitanteNombreCtrl.text.trim(),
+                });
+
+                if (mounted) setState(() => _guardando = false);
+              },
+              child: const Text('Guardar Equipos'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -293,10 +390,14 @@ class _TarjetaPartidoAdminState extends State<TarjetaPartidoAdmin> {
     final visitante = widget.partido['visitante'];
     final bool yaJugado = widget.partido['jugado'] ?? false;
 
-    final String faseTraducida = widget.partido['fase'].toString().replaceAll('Matchday', 'Jornada');
+    final String faseOriginal = widget.partido['fase'].toString();
+    final String faseTraducida = faseOriginal.replaceAll('Matchday', 'Jornada');
     final String grupoTraducido = widget.partido['grupo'] != '' 
         ? widget.partido['grupo'].toString().replaceAll('Group', 'Grupo') 
         : '';
+
+    // Condición: Si NO es fase de grupos (Matchday), permitimos editar los nombres de los equipos
+    final bool esFaseFinal = !faseOriginal.startsWith('Matchday');
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -312,14 +413,28 @@ class _TarjetaPartidoAdminState extends State<TarjetaPartidoAdmin> {
                 "$faseTraducida ${grupoTraducido.isNotEmpty ? '• $grupoTraducido' : ''}  [ID: ${widget.partido['id']}]",
                 style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.w500),
               ),
-              if (_guardando)
-                const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red))
-              else
-                Icon(
-                  yaJugado ? Icons.check_circle : Icons.radio_button_unchecked,
-                  size: 14,
-                  color: yaJugado ? Colors.green : Colors.grey,
-                )
+              Row(
+                children: [
+                  // Botón de lápiz: Solo aparece en las pestañas de eliminación directa
+                  if (esFaseFinal)
+                    IconButton(
+                      icon: const Icon(Icons.edit_note, size: 18, color: Colors.blue),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: _mostrarDialogoEditarEquipos,
+                      tooltip: 'Definir Países Clasificados',
+                    ),
+                  if (esFaseFinal) const SizedBox(width: 10),
+                  if (_guardando)
+                    const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red))
+                  else
+                    Icon(
+                      yaJugado ? Icons.check_circle : Icons.radio_button_unchecked,
+                      size: 14,
+                      color: yaJugado ? Colors.green : Colors.grey,
+                    ),
+                ],
+              )
             ],
           ),
           const SizedBox(height: 8),
@@ -330,7 +445,6 @@ class _TarjetaPartidoAdminState extends State<TarjetaPartidoAdmin> {
               ),
               const SizedBox(width: 10),
               
-              // Input Marcador Local Oficial
               SizedBox(
                 width: 44,
                 height: 38,
@@ -354,7 +468,6 @@ class _TarjetaPartidoAdminState extends State<TarjetaPartidoAdmin> {
                 child: Text(':', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
               ),
               
-              // Input Marcador Visitante Oficial
               SizedBox(
                 width: 44,
                 height: 38,

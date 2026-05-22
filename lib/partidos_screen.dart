@@ -146,8 +146,7 @@ class _ResumenUsuarioHeader extends StatelessWidget {
   }
 }
 
-// --- WIDGET 2: LISTA DE PARTIDOS FILTRADA CON SELECTOR DE VISTA (GRUPO / JORNADA) ---
-// --- WIDGET 2: LISTA DE PARTIDOS FILTRADA CON DOBLE ACORDEÓN (GRUPOS Y JORNADAS) ---
+// --- WIDGET 2: LISTA DE PARTIDOS FILTRADA CON DOBLE ACORDEÓN PARA EL USUARIO (VERSION FINAL PREMIUM) ---
 class _ListaPartidosFiltrada extends StatefulWidget {
   final String uidUsuario;
   final String tipoFase;
@@ -202,17 +201,25 @@ class _ListaPartidosFiltradaState extends State<_ListaPartidosFiltrada> {
           return const Center(child: Text('No hay partidos en esta fase.', style: TextStyle(color: Colors.grey)));
         }
 
-        // === FASE DE GRUPOS ACTIVADA ===
+        // Función interna para traducir las fases eliminatorias en los títulos de acordeones
+        String traducirFase(String faseOriginal) {
+          switch (faseOriginal.trim()) {
+            case 'Round of 32': return 'Dieciseisavos de Final';
+            case 'Round of 16': return 'Octavos de Final';
+            default: return faseOriginal;
+          }
+        }
+
+        // === CASO 1: FASE DE GRUPOS ACTIVADA ===
         if (widget.tipoFase == 'Grupos') {
           
-          // --- MODO 1: VISTA POR JORNADA (AGRUPADA EN ACORDEONES) ---
+          // --- MODO 1.1: VISTA POR JORNADA ---
           if (_verPorJornada) {
             Map<String, List<Map<String, dynamic>>> partidosPorJornada = {};
             
             for (var doc in partidosDocs) {
               final partido = doc.data() as Map<String, dynamic>;
               final String faseOriginal = partido['fase'] ?? 'Otros';
-              // Traducimos al vuelo para agrupar bajo la misma llave en español
               final String jornadaTraducida = faseOriginal.replaceAll('Matchday', 'Jornada');
               
               if (!partidosPorJornada.containsKey(jornadaTraducida)) {
@@ -221,10 +228,8 @@ class _ListaPartidosFiltradaState extends State<_ListaPartidosFiltrada> {
               partidosPorJornada[jornadaTraducida]!.add(partido);
             }
 
-            // Obtenemos las llaves de las jornadas ordenadas de forma natural
             final listaJornadas = partidosPorJornada.keys.toList()
               ..sort((a, b) {
-                // Extrayendo el número para que ordene numéricamente (Jornada 2 antes de Jornada 10)
                 int numA = int.parse(a.replaceAll(RegExp(r'[^0-9]'), ''));
                 int numB = int.parse(b.replaceAll(RegExp(r'[^0-9]'), ''));
                 return numA.compareTo(numB);
@@ -261,7 +266,7 @@ class _ListaPartidosFiltradaState extends State<_ListaPartidosFiltrada> {
             );
           }
 
-          // --- MODO 2: VISTA POR GRUPOS (AGRUPADA EN ACORDEONES) ---
+          // --- MODO 1.2: VISTA POR GRUPOS ---
           Map<String, List<Map<String, dynamic>>> partidosPorGrupo = {};
           for (var doc in partidosDocs) {
             final partido = doc.data() as Map<String, dynamic>;
@@ -304,7 +309,51 @@ class _ListaPartidosFiltradaState extends State<_ListaPartidosFiltrada> {
           );
         }
 
-        // === OTRAS PESTAÑAS (FASES FINALES - LISTA PLANAL NORMAL) ===
+        // === CASO 2: PESTAÑA DE 16AVOS Y 8VOS PARA USUARIOS (NUEVA AGRUPACIÓN CON ACORDEONES) ===
+        if (widget.tipoFase == 'Eliminatorias') {
+          Map<String, List<Map<String, dynamic>>> partidosPorFaseEliminatoria = {};
+          
+          for (var doc in partidosDocs) {
+            final partido = doc.data() as Map<String, dynamic>;
+            final String faseOriginal = partido['fase'] ?? 'Otros';
+            final String faseTraducida = traducirFase(faseOriginal);
+
+            if (!partidosPorFaseEliminatoria.containsKey(faseTraducida)) {
+              partidosPorFaseEliminatoria[faseTraducida] = [];
+            }
+            partidosPorFaseEliminatoria[faseTraducida]!.add(partido);
+          }
+
+          // Forzamos el orden cronológico lógico (16avos primero, luego 8vos)
+          final listaFases = ['Dieciseisavos de Final', 'Octavos de Final']
+              .where((fase) => partidosPorFaseEliminatoria.containsKey(fase))
+              .toList();
+
+          return ListView.builder(
+            padding: const EdgeInsets.only(top: 8, bottom: 80),
+            itemCount: listaFases.length,
+            itemBuilder: (context, index) {
+              final String nombreFase = listaFases[index];
+              final List<Map<String, dynamic>> partidosDeLaFase = partidosPorFaseEliminatoria[nombreFase]!;
+
+              return Card(
+                margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                elevation: 1,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                child: ExpansionTile(
+                  title: Text(nombreFase, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade900, fontSize: 15)),
+                  leading: const Icon(Icons.account_tree_outlined, color: Colors.blue), // Icono de llaves de torneo
+                  trailing: Text('${partidosDeLaFase.length} partidos', style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                  children: partidosDeLaFase.map((partido) {
+                    return TarjetaPartido(partido: partido, uidUsuario: widget.uidUsuario);
+                  }).toList(),
+                ),
+              );
+            },
+          );
+        }
+
+        // === CASO 3: PESTAÑA DE FINALES (LISTA PLANAL NORMAL SIN ACORDEÓN) ===
         return ListView.builder(
           padding: const EdgeInsets.only(top: 8, bottom: 80),
           itemCount: partidosDocs.length,
@@ -342,7 +391,6 @@ class _ListaPartidosFiltradaState extends State<_ListaPartidosFiltrada> {
     );
   }
 }
-
 
 
 
