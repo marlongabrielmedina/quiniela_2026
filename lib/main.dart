@@ -45,17 +45,21 @@ class MiQuinielaApp extends StatelessWidget {
                   return const Scaffold(body: Center(child: CircularProgressIndicator()));
                 }
 
-                if (userSnapshot.hasData && userSnapshot.data!.exists) {
-                  final datos = userSnapshot.data!.data() as Map<String, dynamic>;
-                  
-                  // Si NO tiene el campo 'codigoLiga' o está vacío, lo mandamos a pedir el código
-                  if (datos['codigoLiga'] == null || datos['codigoLiga'].toString().isEmpty) {
-                    return const CodigoScreen();
-                  }
+// === REVISA ESTE BLOQUE EXACTO DENTRO DEL FUTUREBUILDER EN TU MAIN.DAR ===
+if (userSnapshot.hasData && userSnapshot.data!.exists) {
+  final datos = userSnapshot.data!.data() as Map<String, dynamic>;
+  
+  // Condición ultra-estricta: si es nulo, está vacío o solo tiene espacios, lo frena
+  if (!datos.containsKey('codigoLiga') || 
+      datos['codigoLiga'] == null || 
+      datos['codigoLiga'].toString().trim().isEmpty) {
+    return const CodigoScreen(); // Los manda a elegir liga sí o sí
+  }
 
-                  // Si ya tiene código de liga, va directo al Dashboard
-                  return const PartidosScreen();
-                }
+  // Si ya tiene una liga válida y registrada, al Dashboard
+  return const PartidosScreen();
+}
+
 
                 return const LoginScreen();
               },

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'tablero_screen.dart';
-import 'admin_screen.dart';
+import 'admin_screen.dart'; 
+import 'tablero_screen.dart'; 
 
 class PartidosScreen extends StatelessWidget {
   const PartidosScreen({super.key});
@@ -11,134 +11,135 @@ class PartidosScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final String uidUsuario = FirebaseAuth.instance.currentUser?.uid ?? '';
 
-    // Definimos las pestañas del Mundial 2026
-    return DefaultTabController(
-      length: 3, // Tres pestañas principales para no saturar
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('⚽ Mi Quiniela 2026'),
-          backgroundColor: Colors.blue.shade800,
-          foregroundColor: Colors.white,
-          bottom: const TabBar(
-            labelColor: Colors.white,
-            unselectedLabelColor: Colors.white70,
-            indicatorColor: Colors.amber,
-            tabs: [
-              Tab(icon: Icon(Icons.grid_view), text: 'Grupos'),
-              Tab(icon: Icon(Icons.filter_2), text: '16avos y 8vos'),
-              Tab(icon: Icon(Icons.emoji_events), text: 'Finales'),
-            ],
-          ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.leaderboard),
-              tooltip: 'Ver Ranking',
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TableroScreen())),
-            ),
-            IconButton(
-              icon: const Icon(Icons.exit_to_app),
-              onPressed: () => FirebaseAuth.instance.signOut(),
-            )
-          ],
-        ),
-        body: Column(
-          children: [
-            // 1. DASHBOARD HEADER: Resumen del usuario logueado
-            _ResumenUsuarioHeader(uidUsuario: uidUsuario),
+    return FutureBuilder<DocumentSnapshot>(
+      future: FirebaseFirestore.instance.collection('usuarios').doc(uidUsuario).get(),
+      builder: (context, userSnapshot) {
+        if (userSnapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
 
-            // 2. CONTENIDO DE LAS PESTAÑAS (Listas filtradas de partidos)
-            Expanded(
-              child: SafeArea(
-                bottom: true, // Esto le dice a Flutter: "Respeta la barra de botones de abajo"
-                child: TabBarView(
-                  children: [
-                    _ListaPartidosFiltrada(uidUsuario: uidUsuario, tipoFase: 'Grupos'),
-                    _ListaPartidosFiltrada(uidUsuario: uidUsuario, tipoFase: 'Eliminatorias'),
-                    _ListaPartidosFiltrada(uidUsuario: uidUsuario, tipoFase: 'Finales'),
-                  ],
+        final datosUsuario = userSnapshot.data?.data() as Map<String, dynamic>? ?? {};
+        final bool esAdmin = (datosUsuario['rol'] == 'admin');
+        final String nombreUsuario = datosUsuario['nombre'] ?? 'Usuario';
+        final int puntosUsuario = datosUsuario['puntos'] ?? 0;
+        final String? fotoUrl = datosUsuario['fotoUrl'] ?? datosUsuario['photoUrl'];
+
+        return DefaultTabController(
+          length: 3, 
+          child: Scaffold(
+            appBar: AppBar(
+              title: const Text('⚽ Quiniela Mundial 2026'),
+              backgroundColor: Colors.blue.shade900,
+              foregroundColor: Colors.white,
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.emoji_events, color: Colors.amber),
+                  tooltip: 'Ver Tabla de Posiciones',
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const TableroScreen()),
+                    );
+                  },
                 ),
+              ],
+              bottom: const TabBar(
+                labelColor: Colors.white,
+                unselectedLabelColor: Colors.white70,
+                indicatorColor: Colors.amber,
+                tabs: [
+                  Tab(icon: Icon(Icons.grid_view), text: 'Grupos'),
+                  Tab(icon: Icon(Icons.filter_2), text: '16avos y 8vos'),
+                  Tab(icon: Icon(Icons.emoji_events), text: 'Finales'),
+                ],
               ),
             ),
-          ],
-        ),
-
-        // Botón flotante para el Admin
-        floatingActionButton: FutureBuilder<DocumentSnapshot>(
-          future: FirebaseFirestore.instance.collection('usuarios').doc(uidUsuario).get(),
-          builder: (context, snapshot) {
-            if (snapshot.hasData && snapshot.data!.exists) {
-              final datos = snapshot.data!.data() as Map<String, dynamic>;
-              if (datos['rol'] == 'admin') {
-                return FloatingActionButton.extended(
-                  backgroundColor: Colors.redAccent,
-                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminScreen())),
-                  label: const Text('Admin', style: TextStyle(color: Colors.white)),
-                  icon: const Icon(Icons.admin_panel_settings, color: Colors.white),
-                );
-              }
-            }
-            return const SizedBox.shrink();
-          },
-        ),
-      ),
-    );
-  }
-}
-
-// --- WIDGET 1: HEADER DEL DASHBOARD ---
-class _ResumenUsuarioHeader extends StatelessWidget {
-  final String uidUsuario;
-  const _ResumenUsuarioHeader({required this.uidUsuario});
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance.collection('usuarios').doc(uidUsuario).snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData || !snapshot.data!.exists) return const SizedBox.shrink();
-        final usuario = snapshot.data!.data() as Map<String, dynamic>;
-
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16.0),
-          decoration: BoxDecoration(
-            color: Colors.blue.shade800,
-            borderRadius: const BorderRadius.only(
-              bottomLeft: Radius.circular(24),
-              bottomRight: Radius.circular(24),
-            ),
-          ),
-          child: Row(
-            children: [
-              CircleAvatar(
-                radius: 30,
-                backgroundImage: NetworkImage(usuario['fotoUrl'] ?? ''),
-                backgroundColor: Colors.grey.shade300,
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '¡Hola, ${usuario['nombre'].toString().split(' ')[0]}!',
-                      style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+            body: Column(
+              children: [
+                // --- 🌟 NUEVO HEADER DE BIENVENIDA PREMIUM ---
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade900,
+                    borderRadius: const BorderRadius.only(
+                      bottomLeft: Radius.circular(16),
+                      bottomRight: Radius.circular(16),
                     ),
-                    const Text('Listo para los vaticinios de hoy', style: TextStyle(color: Colors.white70, fontSize: 13)),
-                  ],
+                  ),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 22,
+                        backgroundColor: Colors.white24,
+                        backgroundImage: (fotoUrl != null && fotoUrl.isNotEmpty) ? NetworkImage(fotoUrl) : null,
+                        child: (fotoUrl == null || fotoUrl.isEmpty)
+                            ? Text(nombreUsuario[0].toUpperCase(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18))
+                            : null,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '¡Hola, $nombreUsuario!',
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                            const Text(
+                              'Ingresa tus vaticinios antes de cada partido',
+                              style: TextStyle(color: Colors.white70, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.amber,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.stars, color: Colors.black87, size: 16),
+                            const SizedBox(width: 4),
+                            Text(
+                              '$puntosUsuario pts',
+                              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87, fontSize: 14),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                decoration: BoxDecoration(color: Colors.amber, borderRadius: BorderRadius.circular(16)),
-                child: Column(
-                  children: [
-                    Text('${usuario['puntos'] ?? 0}', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87)),
-                    const Text('PUNTOS', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.black54)),
-                  ],
+                
+                // --- CONTENIDO DE LAS PESTAÑAS ---
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      _ListaPartidosFiltrada(uidUsuario: uidUsuario, tipoFase: 'Grupos'),
+                      _ListaPartidosFiltrada(uidUsuario: uidUsuario, tipoFase: 'Eliminatorias'),
+                      _ListaPartidosFiltrada(uidUsuario: uidUsuario, tipoFase: 'Finales'),
+                    ],
+                  ),
                 ),
-              )
-            ],
+              ],
+            ),
+            // 👑 BOTÓN DE CONTROL DE DELEGADOS (Tú, Celeste o Kevin)
+            floatingActionButton: esAdmin
+                ? FloatingActionButton.extended(
+                    backgroundColor: Colors.red.shade800,
+                    foregroundColor: Colors.white,
+                    icon: const Icon(Icons.admin_panel_settings),
+                    label: const Text('Panel Admin'),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const AdminScreen()),
+                      );
+                    },
+                  )
+                : null,
           ),
         );
       },
@@ -146,7 +147,7 @@ class _ResumenUsuarioHeader extends StatelessWidget {
   }
 }
 
-// --- WIDGET 2: LISTA DE PARTIDOS FILTRADA CON DOBLE ACORDEÓN PARA EL USUARIO (VERSION FINAL PREMIUM) ---
+// --- WIDGET 2: LISTA DE PARTIDOS FILTRADA CON DOBLE ACORDEÓN ---
 class _ListaPartidosFiltrada extends StatefulWidget {
   final String uidUsuario;
   final String tipoFase;
@@ -180,7 +181,7 @@ class _ListaPartidosFiltradaState extends State<_ListaPartidosFiltrada> {
 
         final partidosDocs = snapshot.data?.docs ?? [];
         
-        // 1. ORDENAMIENTO CRONOLÓGICO BASE (Fecha y Hora)
+        // ORDENAMIENTO CRONOLÓGICO BASE
         partidosDocs.sort((a, b) {
           final dataA = a.data() as Map<String, dynamic>;
           final dataB = b.data() as Map<String, dynamic>;
@@ -201,7 +202,6 @@ class _ListaPartidosFiltradaState extends State<_ListaPartidosFiltrada> {
           return const Center(child: Text('No hay partidos en esta fase.', style: TextStyle(color: Colors.grey)));
         }
 
-        // Función interna para traducir las fases eliminatorias en los títulos de acordeones
         String traducirFase(String faseOriginal) {
           switch (faseOriginal.trim()) {
             case 'Round of 32': return 'Dieciseisavos de Final';
@@ -254,8 +254,9 @@ class _ListaPartidosFiltradaState extends State<_ListaPartidosFiltrada> {
                           title: Text(nombreJornada, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange.shade900, fontSize: 15)),
                           leading: const Icon(Icons.calendar_month, color: Colors.orange),
                           trailing: Text('${partidosDeLaJornada.length} partidos', style: const TextStyle(color: Colors.grey, fontSize: 11)),
-                          children: partidosDeLaJornada.map((partido) {
-                            return TarjetaPartido(partido: partido, uidUsuario: widget.uidUsuario);
+                          children: partidosDeLaJornada.map((docPartido) {
+                            // Pasamos el mapa interno correcto del documento de Firestore
+                            return TarjetaPartido(partido: docPartido, uidUsuario: widget.uidUsuario);
                           }).toList(),
                         ),
                       );
@@ -309,7 +310,7 @@ class _ListaPartidosFiltradaState extends State<_ListaPartidosFiltrada> {
           );
         }
 
-        // === CASO 2: PESTAÑA DE 16AVOS Y 8VOS PARA USUARIOS (NUEVA AGRUPACIÓN CON ACORDEONES) ===
+        // === CASO 2: PESTAÑA DE 16AVOS Y 8VOS (AGRUPACIÓN CON ACORDEONES) ===
         if (widget.tipoFase == 'Eliminatorias') {
           Map<String, List<Map<String, dynamic>>> partidosPorFaseEliminatoria = {};
           
@@ -324,7 +325,6 @@ class _ListaPartidosFiltradaState extends State<_ListaPartidosFiltrada> {
             partidosPorFaseEliminatoria[faseTraducida]!.add(partido);
           }
 
-          // Forzamos el orden cronológico lógico (16avos primero, luego 8vos)
           final listaFases = ['Dieciseisavos de Final', 'Octavos de Final']
               .where((fase) => partidosPorFaseEliminatoria.containsKey(fase))
               .toList();
@@ -342,7 +342,7 @@ class _ListaPartidosFiltradaState extends State<_ListaPartidosFiltrada> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 child: ExpansionTile(
                   title: Text(nombreFase, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade900, fontSize: 15)),
-                  leading: const Icon(Icons.account_tree_outlined, color: Colors.blue), // Icono de llaves de torneo
+                  leading: const Icon(Icons.account_tree_outlined, color: Colors.blue),
                   trailing: Text('${partidosDeLaFase.length} partidos', style: const TextStyle(color: Colors.grey, fontSize: 11)),
                   children: partidosDeLaFase.map((partido) {
                     return TarjetaPartido(partido: partido, uidUsuario: widget.uidUsuario);
@@ -353,7 +353,7 @@ class _ListaPartidosFiltradaState extends State<_ListaPartidosFiltrada> {
           );
         }
 
-        // === CASO 3: PESTAÑA DE FINALES (LISTA PLANAL NORMAL SIN ACORDEÓN) ===
+        // === CASO 3: PESTAÑA DE FINALES (LISTA CORRIDA CONFORTABLE) ===
         return ListView.builder(
           padding: const EdgeInsets.only(top: 8, bottom: 80),
           itemCount: partidosDocs.length,
@@ -392,9 +392,7 @@ class _ListaPartidosFiltradaState extends State<_ListaPartidosFiltrada> {
   }
 }
 
-
-
-// --- WIDGET 3: TARJETA DE PARTIDO MODERNA ---
+// --- WIDGET 3: TU TARJETA DE PARTIDO MODERNA ORIGINAL (REINTEGRADA AL 100%) ---
 class TarjetaPartido extends StatefulWidget {
   final Map<String, dynamic> partido;
   final String uidUsuario;
@@ -422,7 +420,6 @@ class _TarjetaPartidoState extends State<TarjetaPartido> {
     super.dispose();
   }
 
-  // Traduce las fases que vienen del JSON a un español limpio y futbolero
   String _traducirFase(String faseOriginal) {
     String fase = faseOriginal.trim();
     if (fase.startsWith('Matchday')) {
@@ -468,7 +465,6 @@ class _TarjetaPartidoState extends State<TarjetaPartido> {
       'procesado': false,
     });
 
-    // Simulamos un pequeño destello de guardado elegante en lugar de un SnackBar molesto
     await Future.delayed(const Duration(milliseconds: 300));
     if (mounted) setState(() => _guardando = false);
   }
@@ -479,7 +475,6 @@ class _TarjetaPartidoState extends State<TarjetaPartido> {
     final visitante = widget.partido['visitante'];
     final bool yaJugado = widget.partido['jugado'] ?? false;
     
-    // Traducimos los textos del encabezado
     final String faseTraducida = _traducirFase(widget.partido['fase']);
     final String grupoTraducido = widget.partido['grupo'] != '' 
         ? widget.partido['grupo'].toString().replaceAll('Group', 'Grupo') 
@@ -512,7 +507,6 @@ class _TarjetaPartidoState extends State<TarjetaPartido> {
                     ]
                   ],
                 ),
-                // Indicador dinámico de estado (Guardando / Oficial / Pendiente)
                 if (yaJugado)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -530,7 +524,6 @@ class _TarjetaPartidoState extends State<TarjetaPartido> {
             // --- FILA DEL MARCADOR EN VIVO ---
             Row(
               children: [
-                // Nombre Local
                 Expanded(
                   child: Text(
                     local['nombre'], 
@@ -540,7 +533,6 @@ class _TarjetaPartidoState extends State<TarjetaPartido> {
                 ),
                 const SizedBox(width: 12),
                 
-                // Input Goles Local
                 SizedBox(
                   width: 48,
                   height: 42,
@@ -565,7 +557,6 @@ class _TarjetaPartidoState extends State<TarjetaPartido> {
                   child: Text('vs', style: TextStyle(fontWeight: FontWeight.w400, color: Colors.black38, fontSize: 14)),
                 ),
                 
-                // Input Goles Visitante
                 SizedBox(
                   width: 48,
                   height: 42,
@@ -586,7 +577,6 @@ class _TarjetaPartidoState extends State<TarjetaPartido> {
                 ),
                 const SizedBox(width: 12),
                 
-                // Nombre Visitante
                 Expanded(
                   child: Text(
                     visitante['nombre'], 
