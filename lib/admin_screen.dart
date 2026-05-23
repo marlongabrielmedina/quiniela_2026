@@ -92,20 +92,26 @@ class AdminScreen extends StatelessWidget {
 }
 
 
-// --- WIDGET: LISTA DE PARTIDOS PARA EL ADMINISTRADOR ---
-class _ListaPartidosAdmin extends StatelessWidget {
+// --- WIDGET: LISTA DE PARTIDOS AGRUPADA PARA EL ADMINISTRADOR ---
+class _ListaPartidosAdmin extends StatefulWidget {
   final String tipoFase;
 
-  const _ListaPartidosAdmin({required this.tipoFase});
+  const _ListaPartidosAdmin({super.key, required this.tipoFase});
+
+  @override
+  State<_ListaPartidosAdmin> createState() => _ListaPartidosAdminState();
+}
+
+class _ListaPartidosAdminState extends State<_ListaPartidosAdmin> {
+  bool _verPorJornada = false; // Permite a los admins alternar vistas en grupos
 
   @override
   Widget build(BuildContext context) {
     Query query = FirebaseFirestore.instance.collection('partidos');
 
-    // Filtramos exactamente igual las fases según la pestaña activa
-    if (tipoFase == 'Grupos') {
+    if (widget.tipoFase == 'Grupos') {
       query = query.where('fase', isGreaterThanOrEqualTo: 'Matchday').where('fase', isLessThanOrEqualTo: 'Matchday 9');
-    } else if (tipoFase == 'Eliminatorias') {
+    } else if (widget.tipoFase == 'Eliminatorias') {
       query = query.where('fase', whereIn: ['Round of 32', 'Round of 16']);
     } else {
       query = query.where('fase', whereIn: ['Quarter-final', 'Semi-final', 'Match for third place', 'Final']);
@@ -119,7 +125,7 @@ class _ListaPartidosAdmin extends StatelessWidget {
 
         final partidosDocs = snapshot.data?.docs ?? [];
 
-        // Ordenamiento Cronológico idéntico para que coincida con la vista de usuario
+        // ORDENAMIENTO CRONOLÓGICO BASE IDENTICO
         partidosDocs.sort((a, b) {
           final dataA = a.data() as Map<String, dynamic>;
           final dataB = b.data() as Map<String, dynamic>;
@@ -140,17 +146,225 @@ class _ListaPartidosAdmin extends StatelessWidget {
           return const Center(child: Text('No hay partidos en esta fase.', style: TextStyle(color: Colors.grey)));
         }
 
+        String traducirFase(String faseOriginal) {
+          switch (faseOriginal.trim()) {
+            case 'Round of 32': return 'Dieciseisavos de Final';
+            case 'Round of 16': return 'Octavos de Final';
+            case 'Quarter-final': return 'Cuartos de Final';
+            case 'Semi-final': return 'Semifinal';
+            case 'Match for third place': return 'Tercer Lugar';
+            case 'Final': return '🏆 Gran Final';
+            default: return faseOriginal;
+          }
+        }
+
+        // === CASO 1: FASE DE GRUPOS EN EL PANEL ADMIN ===
+        if (widget.tipoFase == 'Grupos') {
+          if (_verPorJornada) {
+            Map<String, List<QueryDocumentSnapshot>> partidosPorJornada = {};
+            for (var doc in partidosDocs) {
+              final partido = doc.data() as Map<String, dynamic>;
+              final String faseOriginal = partido['fase'] ?? 'Otros';
+              final String jornadaTraducida = faseOriginal.replaceAll('Matchday', 'Jornada');
+              
+              if (!partidosPorJornada.containsKey(jornadaTraducida)) {
+                partidosPorJornada[jornadaTraducida] = [];
+              }
+              partidosPorJornada[jornadaTraducida]!.add(doc);
+            }
+
+            final listaJornadas = partidosPorJornada.keys.toList()
+              ..sort((a, b) {
+                int numA = int.parse(a.replaceAll(RegExp(r'[^0-9]'), ''));
+                int numB = int.parse(b.replaceAll(RegExp(r'[^0-9]'), ''));
+                return numA.compareTo(numB);
+              });
+
+            return Column(
+              children: [
+                _buildSelectorBar(),
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.only(top: 0, bottom: 24),
+                    itemCount: listaJornadas.length,
+                    itemBuilder: (context, index) {
+                      final String nombreJornada = listaJornadas[index];
+                      final List<QueryDocumentSnapshot> docsDeLaJornada = partidosPorJornada[nombreJornada]!;
+
+                      return Card(
+                        margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                        elevation: 1,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        child: ExpansionTile(
+                          title: Text(nombreJornada, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange.shade900, fontSize: 15)),
+                          leading: const Icon(Icons.calendar_month, color: Colors.orange),
+                          trailing: Text('${docsDeLaJornada.length} partidos', style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                          children: docsDeLaJornada.map((doc) {
+                            return TarjetaPartidoAdmin(idPartido: doc.id, partido: doc.data() as Map<String, dynamic>);
+                          }).toList(),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            );
+          }
+
+          Map<String, List<QueryDocumentSnapshot>> partidosPorGrupo = {};
+          for (var doc in partidosDocs) {
+            final partido = doc.data() as Map<String, dynamic>;
+            final String grupo = partido['grupo'] ?? 'Otros';
+            if (!partidosPorGrupo.containsKey(grupo)) partidosPorGrupo[grupo] = [];
+            partidosPorGrupo[grupo]!.add(doc);
+          }
+
+          final listaGrupos = partidosPorGrupo.keys.toList()..sort();
+
+          return Column(
+            children: [
+              _buildSelectorBar(),
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.only(top: 0, bottom: 24),
+                  itemCount: listaGrupos.length,
+                  itemBuilder: (context, index) {
+                    final String nombreGrupo = listaGrupos[index];
+                    final List<QueryDocumentSnapshot> docsDelGrupo = partidosPorGrupo[nombreGrupo]!;
+                    final String nombreMostrado = nombreGrupo.replaceAll('Group', 'Grupo');
+
+                    return Card(
+                      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                      elevation: 1,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      child: ExpansionTile(
+                        title: Text(nombreMostrado, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade900, fontSize: 15)),
+                        leading: const Icon(Icons.sports_soccer, color: Colors.blue),
+                        trailing: Text('${docsDelGrupo.length} partidos', style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                        children: docsDelGrupo.map((doc) {
+                          return TarjetaPartidoAdmin(idPartido: doc.id, partido: doc.data() as Map<String, dynamic>);
+                        }).toList(),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+        }
+
+        // === CASO 2: PESTAÑA DE 16AVOS Y 8VOS EN EL PANEL ADMIN ===
+        if (widget.tipoFase == 'Eliminatorias') {
+          Map<String, List<QueryDocumentSnapshot>> partidosPorFaseEliminatoria = {};
+          
+          for (var doc in partidosDocs) {
+            final partido = doc.data() as Map<String, dynamic>;
+            final String faseOriginal = partido['fase'] ?? 'Otros';
+            final String faseTraducida = traducirFase(faseOriginal);
+
+            if (!partidosPorFaseEliminatoria.containsKey(faseTraducida)) {
+              partidosPorFaseEliminatoria[faseTraducida] = [];
+            }
+            partidosPorFaseEliminatoria[faseTraducida]!.add(doc);
+          }
+
+          final listaFases = ['Dieciseisavos de Final', 'Octavos de Final']
+              .where((fase) => partidosPorFaseEliminatoria.containsKey(fase))
+              .toList();
+
+          return ListView.builder(
+            padding: const EdgeInsets.only(top: 8, bottom: 24),
+            itemCount: listaFases.length,
+            itemBuilder: (context, index) {
+              final String nombreFase = listaFases[index];
+              final List<QueryDocumentSnapshot> docsDeLaFase = partidosPorFaseEliminatoria[nombreFase]!;
+
+              return Card(
+                margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                elevation: 1,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                child: ExpansionTile(
+                  title: Text(nombreFase, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade900, fontSize: 15)),
+                  leading: const Icon(Icons.account_tree_outlined, color: Colors.blue),
+                  trailing: Text('${docsDeLaFase.length} partidos', style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                  children: docsDeLaFase.map((doc) {
+                    return TarjetaPartidoAdmin(idPartido: doc.id, partido: doc.data() as Map<String, dynamic>);
+                  }).toList(),
+                ),
+              );
+            },
+          );
+        }
+
+        // === CASO 3: PESTAÑA DE FINALES EN EL PANEL ADMIN (CERRADOS POR DEFECTO 🧹) ===
+        Map<String, List<QueryDocumentSnapshot>> partidosPorFaseFinal = {};
+        
+        for (var doc in partidosDocs) {
+          final partido = doc.data() as Map<String, dynamic>;
+          final String faseOriginal = partido['fase'] ?? 'Otros';
+          final String faseTraducida = traducirFase(faseOriginal);
+
+          if (!partidosPorFaseFinal.containsKey(faseTraducida)) {
+            partidosPorFaseFinal[faseTraducida] = [];
+          }
+          partidosPorFaseFinal[faseTraducida]!.add(doc);
+        }
+
+        final listaFasesFinales = ['Cuartos de Final', 'Semifinal', 'Tercer Lugar', '🏆 Gran Final']
+            .where((fase) => partidosPorFaseFinal.containsKey(fase))
+            .toList();
+
         return ListView.builder(
           padding: const EdgeInsets.only(top: 8, bottom: 24),
-          itemCount: partidosDocs.length,
+          itemCount: listaFasesFinales.length,
           itemBuilder: (context, index) {
-            final idPartido = partidosDocs[index].id;
-            final partidoData = partidosDocs[index].data() as Map<String, dynamic>;
-            
-            return TarjetaPartidoAdmin(idPartido: idPartido, partido: partidoData);
+            final String nombreFase = listaFasesFinales[index];
+            final List<QueryDocumentSnapshot> docsDeLaFase = partidosPorFaseFinal[nombreFase]!;
+
+            return Card(
+              margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+              elevation: 1,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: ExpansionTile(
+                title: Text(nombreFase, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade900, fontSize: 15)),
+                leading: Icon(
+                  nombreFase.contains('🏆') ? Icons.emoji_events : Icons.account_tree_outlined, 
+                  color: nombreFase.contains('🏆') ? Colors.amber : Colors.blue
+                ),
+                trailing: Text('${docsDeLaFase.length} partidos', style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                children: docsDeLaFase.map((doc) {
+                  return TarjetaPartidoAdmin(idPartido: doc.id, partido: doc.data() as Map<String, dynamic>);
+                }).toList(),
+              ),
+            );
           },
         );
       },
+    );
+  }
+
+  Widget _buildSelectorBar() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            _verPorJornada ? '📅 Agrupado por Jornada' : '🗂️ Agrupado por Grupos',
+            style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black54, fontSize: 13),
+          ),
+          ActionChip(
+            avatar: Icon(_verPorJornada ? Icons.grid_view : Icons.calendar_month, size: 16, color: Colors.black87),
+            backgroundColor: _verPorJornada ? Colors.amber.shade200 : Colors.blue.shade50,
+            label: Text(_verPorJornada ? 'Ver Grupos' : 'Ver Jornadas', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            onPressed: () {
+              setState(() {
+                _verPorJornada = !_verPorJornada;
+              });
+            },
+          ),
+        ],
+      ),
     );
   }
 }
@@ -236,22 +450,85 @@ class _TarjetaPartidoAdminState extends State<TarjetaPartidoAdmin> {
     super.dispose();
   }
 
-  Future<void> _guardarResultadoOficial() async {
+Future<void> _guardarResultadoOficial() async {
     if (_localResultController.text.isEmpty || _visitanteResultController.text.isEmpty) return;
 
     setState(() => _actualizando = true);
 
     try {
-      // Guardamos el marcador real definitivo en el documento del partido
+      final int golesLocalOficial = int.parse(_localResultController.text);
+      final int golesVisitanteOficial = int.parse(_visitanteResultController.text);
+
+      // 1. Guardar el resultado real en la colección global del partido
       await FirebaseFirestore.instance.collection('partidos').doc(widget.idPartido).update({
         'jugado': true,
-        'local.goles': int.parse(_localResultController.text),
-        'visitante.goles': int.parse(_visitanteResultController.text),
+        'local.goles': golesLocalOficial,
+        'visitante.goles': golesVisitanteOficial,
       });
+
+      // =========================================================
+      // 🏆 2. LÓGICA DE REPARTICIÓN DE PUNTOS DE LA QUINIELA
+      // =========================================================
+      
+      // Traemos TODAS las predicciones que los usuarios hicieron para ESTE partido
+      // (Buscamos solo las que 'procesado' sea false, para no volver a sumar puntos por error si editas el marcador)
+      final prediccionesSnapshot = await FirebaseFirestore.instance
+          .collection('predicciones')
+          .where('partidoId', isEqualTo: widget.idPartido)
+          .where('procesado', isEqualTo: false)
+          .get();
+
+      // Creamos un Lote (Batch) para mandar todas las actualizaciones juntas a Firebase
+      final batch = FirebaseFirestore.instance.batch();
+
+      for (var doc in prediccionesSnapshot.docs) {
+        final prediccion = doc.data();
+        final int predLocal = prediccion['golesLocal'] ?? 0;
+        final int predVisitante = prediccion['golesVisitante'] ?? 0;
+        final String uidParticipante = prediccion['usuarioId'];
+
+        int puntosGanados = 0;
+
+        // 🥇 REGLA 1: ACIERTO EXACTO (PLENO) -> 3 PUNTOS
+        if (predLocal == golesLocalOficial && predVisitante == golesVisitanteOficial) {
+          puntosGanados = 3;
+        } 
+        // 🥈 REGLA 2: ACIERTO DE TENDENCIA (GANADOR O EMPATE) -> 1 PUNTO
+        else {
+          final int diferenciaOficial = golesLocalOficial - golesVisitanteOficial;
+          final int diferenciaPred = predLocal - predVisitante;
+
+          // Si el signo de la diferencia es el mismo, significa que atinó la tendencia:
+          // (Ambos = 0 es Empate) || (Ambos > 0 es Gana Local) || (Ambos < 0 es Gana Visitante)
+          if ((diferenciaOficial == 0 && diferenciaPred == 0) ||
+              (diferenciaOficial > 0 && diferenciaPred > 0) ||
+              (diferenciaOficial < 0 && diferenciaPred < 0)) {
+            puntosGanados = 1;
+          }
+        }
+
+        // A) Actualizamos la boleta de predicción del usuario
+        batch.update(doc.reference, {
+          'procesado': true,
+          'puntosGanados': puntosGanados,
+        });
+
+        // B) Si ganó puntos, se los sumamos a su perfil global para que suba en el Ranking
+        if (puntosGanados > 0) {
+          final usuarioRef = FirebaseFirestore.instance.collection('usuarios').doc(uidParticipante);
+          // FieldValue.increment es magia: le suma los puntos al valor que ya tenga en la base de datos sin necesidad de leerlo antes
+          batch.update(usuarioRef, {
+            'puntos': FieldValue.increment(puntosGanados)
+          });
+        }
+      }
+
+      // Ejecutamos todas las operaciones matemáticas de la base de datos de un solo golpe
+      await batch.commit();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('⚽ Resultado oficial guardado con éxito. ¡Puntos calculados!'), backgroundColor: Colors.green),
+          const SnackBar(content: Text('⚽ Marcador guardado y puntos repartidos a la Liga'), backgroundColor: Colors.green),
         );
       }
     } catch (e) {
@@ -264,7 +541,6 @@ class _TarjetaPartidoAdminState extends State<TarjetaPartidoAdmin> {
       if (mounted) setState(() => _actualizando = false);
     }
   }
-
   @override
   Widget build(BuildContext context) {
     final local = widget.partido['local'] ?? {};

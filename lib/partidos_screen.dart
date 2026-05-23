@@ -11,8 +11,8 @@ class PartidosScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final String uidUsuario = FirebaseAuth.instance.currentUser?.uid ?? '';
 
-    return FutureBuilder<DocumentSnapshot>(
-      future: FirebaseFirestore.instance.collection('usuarios').doc(uidUsuario).get(),
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance.collection('usuarios').doc(uidUsuario).snapshots(),
       builder: (context, userSnapshot) {
         if (userSnapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -153,6 +153,7 @@ class PartidosScreen extends StatelessWidget {
   }
 }
 
+// --- WIDGET 2: LISTA DE PARTIDOS FILTRADA CON TRIPLE ACORDEÓN ---
 class _ListaPartidosFiltrada extends StatefulWidget {
   final String uidUsuario;
   final String tipoFase;
@@ -186,6 +187,7 @@ class _ListaPartidosFiltradaState extends State<_ListaPartidosFiltrada> {
 
         final partidosDocs = snapshot.data?.docs ?? [];
         
+        // ORDENAMIENTO CRONOLÓGICO BASE
         partidosDocs.sort((a, b) {
           final dataA = a.data() as Map<String, dynamic>;
           final dataB = b.data() as Map<String, dynamic>;
@@ -206,18 +208,23 @@ class _ListaPartidosFiltradaState extends State<_ListaPartidosFiltrada> {
           return const Center(child: Text('No hay partidos en esta fase.', style: TextStyle(color: Colors.grey)));
         }
 
+        // 🌟 TRADUCCIÓN EXTENDIDA A TODAS LAS FASES
         String traducirFase(String faseOriginal) {
           switch (faseOriginal.trim()) {
             case 'Round of 32': return 'Dieciseisavos de Final';
             case 'Round of 16': return 'Octavos de Final';
+            case 'Quarter-final': return 'Cuartos de Final';
+            case 'Semi-final': return 'Semifinal';
+            case 'Match for third place': return 'Tercer Lugar';
+            case 'Final': return '🏆 Gran Final';
             default: return faseOriginal;
           }
         }
 
+        // === CASO 1: FASE DE GRUPOS ===
         if (widget.tipoFase == 'Grupos') {
           if (_verPorJornada) {
             Map<String, List<Map<String, dynamic>>> partidosPorJornada = {};
-            
             for (var doc in partidosDocs) {
               final partido = doc.data() as Map<String, dynamic>;
               final String faseOriginal = partido['fase'] ?? 'Otros';
@@ -309,6 +316,7 @@ class _ListaPartidosFiltradaState extends State<_ListaPartidosFiltrada> {
           );
         }
 
+        // === CASO 2: PESTAÑA DE 16AVOS Y 8VOS ===
         if (widget.tipoFase == 'Eliminatorias') {
           Map<String, List<Map<String, dynamic>>> partidosPorFaseEliminatoria = {};
           
@@ -351,12 +359,48 @@ class _ListaPartidosFiltradaState extends State<_ListaPartidosFiltrada> {
           );
         }
 
+        // === CASO 3: PESTAÑA DE FINALES (ACORDEONES PREMIUM) ===
+        Map<String, List<Map<String, dynamic>>> partidosPorFaseFinal = {};
+        
+        for (var doc in partidosDocs) {
+          final partido = doc.data() as Map<String, dynamic>;
+          final String faseOriginal = partido['fase'] ?? 'Otros';
+          final String faseTraducida = traducirFase(faseOriginal);
+
+          if (!partidosPorFaseFinal.containsKey(faseTraducida)) {
+            partidosPorFaseFinal[faseTraducida] = [];
+          }
+          partidosPorFaseFinal[faseTraducida]!.add(partido);
+        }
+
+        // Forzamos el orden para que la Gran Final quede siempre de último
+        final listaFasesFinales = ['Cuartos de Final', 'Semifinal', 'Tercer Lugar', '🏆 Gran Final']
+            .where((fase) => partidosPorFaseFinal.containsKey(fase))
+            .toList();
+
         return ListView.builder(
           padding: const EdgeInsets.only(top: 8, bottom: 80),
-          itemCount: partidosDocs.length,
+          itemCount: listaFasesFinales.length,
           itemBuilder: (context, index) {
-            final partido = partidosDocs[index].data() as Map<String, dynamic>;
-            return TarjetaPartido(partido: partido, uidUsuario: widget.uidUsuario);
+            final String nombreFase = listaFasesFinales[index];
+            final List<Map<String, dynamic>> partidosDeLaFase = partidosPorFaseFinal[nombreFase]!;
+
+            return Card(
+              margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+              elevation: 1,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: ExpansionTile(
+                title: Text(nombreFase, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade900, fontSize: 15)),
+                leading: Icon(
+                  nombreFase.contains('🏆') ? Icons.emoji_events : Icons.account_tree_outlined, 
+                  color: nombreFase.contains('🏆') ? Colors.amber : Colors.blue
+                ),
+                trailing: Text('${partidosDeLaFase.length} partidos', style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                children: partidosDeLaFase.map((partido) {
+                  return TarjetaPartido(partido: partido, uidUsuario: widget.uidUsuario);
+                }).toList(),
+              ),
+            );
           },
         );
       },
@@ -388,7 +432,6 @@ class _ListaPartidosFiltradaState extends State<_ListaPartidosFiltrada> {
     );
   }
 }
-
 
 // --- WIDGET 3: TARJETA DE PARTIDO CON HORA LIMPIA Y CANDADO DE TIEMPO ---
 class TarjetaPartido extends StatefulWidget {
@@ -552,7 +595,7 @@ class _TarjetaPartidoState extends State<TarjetaPartido> {
     final local = widget.partido['local'];
     final visitante = widget.partido['visitante'];
 
-// 👇 TRADUCCIÓN AL ESPAÑOL (Si no está en la lista, deja el nombre original)
+    // 👇 TRADUCCIÓN AL ESPAÑOL (Si no está en la lista, deja el nombre original)
     final String nombreLocal = _paisesEnEspanol[local['nombre']] ?? local['nombre'];
     final String nombreVisitante = _paisesEnEspanol[visitante['nombre']] ?? visitante['nombre'];
 
