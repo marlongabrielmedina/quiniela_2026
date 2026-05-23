@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "263469891035-r5ds79vqdj1mns6hs7v121c47rs1c3tk.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.quiniela_2026",
+            "certificate_hash": "7ec0af69263056b3f61989a21c754a32dfc7d886"
+          }
+        },
+        {
           "client_id": "263469891035-adftpbi7h6hth5kicrch7tn2h14s8ec9.apps.googleusercontent.com",
           "client_type": 3
         }
@@ -29,6 +37,13 @@
             {
               "client_id": "263469891035-adftpbi7h6hth5kicrch7tn2h14s8ec9.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "263469891035-2m3j5hbo8pitfqc5q2lt14mlqbgfccit.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.quiniela2026"
+              }
             }
           ]
         }

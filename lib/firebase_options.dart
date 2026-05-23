@@ -17,6 +17,9 @@ import 'package:flutter/foundation.dart'
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
+      print(
+        'Running on the web! Please make sure to add the necessary web configuration in firebase_options.dart',
+      );
       return web;
     }
     switch (defaultTargetPlatform) {
@@ -63,7 +66,10 @@ class DefaultFirebaseOptions {
     messagingSenderId: '263469891035',
     projectId: 'quiniela-mundial-2026-3e2b7',
     storageBucket: 'quiniela-mundial-2026-3e2b7.firebasestorage.app',
-    iosClientId: '263469891035-2m3j5hbo8pitfqc5q2lt14mlqbgfccit.apps.googleusercontent.com',
+    androidClientId:
+        '263469891035-r5ds79vqdj1mns6hs7v121c47rs1c3tk.apps.googleusercontent.com',
+    iosClientId:
+        '263469891035-2m3j5hbo8pitfqc5q2lt14mlqbgfccit.apps.googleusercontent.com',
     iosBundleId: 'com.example.quiniela2026',
   );
 
@@ -73,7 +79,10 @@ class DefaultFirebaseOptions {
     messagingSenderId: '263469891035',
     projectId: 'quiniela-mundial-2026-3e2b7',
     storageBucket: 'quiniela-mundial-2026-3e2b7.firebasestorage.app',
-    iosClientId: '263469891035-2m3j5hbo8pitfqc5q2lt14mlqbgfccit.apps.googleusercontent.com',
+    androidClientId:
+        '263469891035-r5ds79vqdj1mns6hs7v121c47rs1c3tk.apps.googleusercontent.com',
+    iosClientId:
+        '263469891035-2m3j5hbo8pitfqc5q2lt14mlqbgfccit.apps.googleusercontent.com',
     iosBundleId: 'com.example.quiniela2026',
   );
 
