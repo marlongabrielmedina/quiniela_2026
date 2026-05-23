@@ -91,25 +91,21 @@ class AdminScreen extends StatelessWidget {
   }
 }
 
-// --- WIDGET DE SOPORTE: FILTRADO Y AGRUPACIÓN DE PARTIDOS EN ADMIN (VERSION FINAL PULIDA) ---
-class _ListaPartidosAdmin extends StatefulWidget {
+
+// --- WIDGET: LISTA DE PARTIDOS PARA EL ADMINISTRADOR ---
+class _ListaPartidosAdmin extends StatelessWidget {
   final String tipoFase;
-  const _ListaPartidosAdmin({super.key, required this.tipoFase});
 
-  @override
-  State<_ListaPartidosAdmin> createState() => _ListaPartidosAdminState();
-}
-
-class _ListaPartidosAdminState extends State<_ListaPartidosAdmin> {
-  bool _verPorJornada = false;
+  const _ListaPartidosAdmin({required this.tipoFase});
 
   @override
   Widget build(BuildContext context) {
     Query query = FirebaseFirestore.instance.collection('partidos');
 
-    if (widget.tipoFase == 'Grupos') {
+    // Filtramos exactamente igual las fases según la pestaña activa
+    if (tipoFase == 'Grupos') {
       query = query.where('fase', isGreaterThanOrEqualTo: 'Matchday').where('fase', isLessThanOrEqualTo: 'Matchday 9');
-    } else if (widget.tipoFase == 'Eliminatorias') {
+    } else if (tipoFase == 'Eliminatorias') {
       query = query.where('fase', whereIn: ['Round of 32', 'Round of 16']);
     } else {
       query = query.where('fase', whereIn: ['Quarter-final', 'Semi-final', 'Match for third place', 'Final']);
@@ -122,8 +118,8 @@ class _ListaPartidosAdminState extends State<_ListaPartidosAdmin> {
         if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
 
         final partidosDocs = snapshot.data?.docs ?? [];
-        
-        // 1. ORDENAMIENTO CRONOLÓGICO BASE (Fecha y Hora)
+
+        // Ordenamiento Cronológico idéntico para que coincida con la vista de usuario
         partidosDocs.sort((a, b) {
           final dataA = a.data() as Map<String, dynamic>;
           final dataB = b.data() as Map<String, dynamic>;
@@ -144,410 +140,265 @@ class _ListaPartidosAdminState extends State<_ListaPartidosAdmin> {
           return const Center(child: Text('No hay partidos en esta fase.', style: TextStyle(color: Colors.grey)));
         }
 
-        // Traduce las fases que vienen del JSON a un español limpio y futbolero para los acordeones
-        String traducirFase(String faseOriginal) {
-          switch (faseOriginal.trim()) {
-            case 'Round of 32': return 'Dieciseisavos de Final';
-            case 'Round of 16': return 'Octavos de Final';
-            default: return faseOriginal;
-          }
-        }
-
-        // === CASO 1: PESTAÑA DE GRUPOS ACTIVADA ===
-        if (widget.tipoFase == 'Grupos') {
-          // --- MODO 1.1: VISTA POR JORNADA EN ADMIN ---
-          if (_verPorJornada) {
-            Map<String, List<Map<String, dynamic>>> partidosPorJornada = {};
-            for (var doc in partidosDocs) {
-              final partido = doc.data() as Map<String, dynamic>;
-              final String faseOriginal = partido['fase'] ?? 'Otros';
-              final String jornadaTraducida = faseOriginal.replaceAll('Matchday', 'Jornada');
-              
-              if (!partidosPorJornada.containsKey(jornadaTraducida)) {
-                partidosPorJornada[jornadaTraducida] = [];
-              }
-              partidosPorJornada[jornadaTraducida]!.add(partido);
-            }
-
-            final listaJornadas = partidosPorJornada.keys.toList()
-              ..sort((a, b) {
-                int numA = int.parse(a.replaceAll(RegExp(r'[^0-9]'), ''));
-                int numB = int.parse(b.replaceAll(RegExp(r'[^0-9]'), ''));
-                return numA.compareTo(numB);
-              });
-
-            return Column(
-              children: [
-                _buildSelectorBarAdmin(),
-                Expanded(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.only(top: 0, bottom: 40),
-                    itemCount: listaJornadas.length,
-                    itemBuilder: (context, index) {
-                      final String nombreJornada = listaJornadas[index];
-                      final List<Map<String, dynamic>> partidosDeLaJornada = partidosPorJornada[nombreJornada]!;
-
-                      return Card(
-                        margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-                        elevation: 1,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        child: ExpansionTile(
-                          title: Text(nombreJornada, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange.shade900, fontSize: 15)),
-                          leading: const Icon(Icons.calendar_month, color: Colors.orange),
-                          trailing: Text('${partidosDeLaJornada.length} partidos', style: const TextStyle(color: Colors.grey, fontSize: 11)),
-                          children: partidosDeLaJornada.map((partido) {
-                            return TarjetaPartidoAdmin(partido: partido);
-                          }).toList(),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            );
-          }
-
-          // --- MODO 1.2: VISTA POR GRUPOS EN ADMIN ---
-          Map<String, List<Map<String, dynamic>>> partidosPorGrupo = {};
-          for (var doc in partidosDocs) {
-            final partido = doc.data() as Map<String, dynamic>;
-            final String grupo = partido['grupo'] ?? 'Otros';
-            if (!partidosPorGrupo.containsKey(grupo)) partidosPorGrupo[grupo] = [];
-            partidosPorGrupo[grupo]!.add(partido);
-          }
-
-          final listaGrupos = partidosPorGrupo.keys.toList()..sort();
-
-          return Column(
-            children: [
-              _buildSelectorBarAdmin(),
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.only(top: 0, bottom: 40),
-                  itemCount: listaGrupos.length,
-                  itemBuilder: (context, index) {
-                    final String nombreGrupo = listaGrupos[index];
-                    final List<Map<String, dynamic>> partidosDelGrupo = partidosPorGrupo[nombreGrupo]!;
-                    final String nombreMostrado = nombreGrupo.replaceAll('Group', 'Grupo');
-
-                    return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-                      elevation: 1,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      child: ExpansionTile(
-                        title: Text(nombreMostrado, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red.shade900, fontSize: 15)),
-                        leading: const Icon(Icons.folder_open, color: Colors.red),
-                        trailing: Text('${partidosDelGrupo.length} partidos', style: const TextStyle(color: Colors.grey, fontSize: 11)),
-                        children: partidosDelGrupo.map((partido) {
-                          return TarjetaPartidoAdmin(partido: partido);
-                        }).toList(),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          );
-        }
-
-        // === CASO 2: PESTAÑA DE 16AVOS Y 8VOS (NUEVA AGRUPACIÓN POR FASE) ===
-        if (widget.tipoFase == 'Eliminatorias') {
-          Map<String, List<Map<String, dynamic>>> partidosPorFaseEliminatoria = {};
-          
-          for (var doc in partidosDocs) {
-            final partido = doc.data() as Map<String, dynamic>;
-            final String faseOriginal = partido['fase'] ?? 'Otros';
-            final String faseTraducida = traducirFase(faseOriginal);
-
-            if (!partidosPorFaseEliminatoria.containsKey(faseTraducida)) {
-              partidosPorFaseEliminatoria[faseTraducida] = [];
-            }
-            partidosPorFaseEliminatoria[faseTraducida]!.add(partido);
-          }
-
-          // Forzamos el orden para que aparezcan primero los 16avos y luego los 8vos
-          final listaFases = ['Dieciseisavos de Final', 'Octavos de Final']
-              .where((fase) => partidosPorFaseEliminatoria.containsKey(fase))
-              .toList();
-
-          return ListView.builder(
-            padding: const EdgeInsets.only(top: 8, bottom: 40),
-            itemCount: listaFases.length,
-            itemBuilder: (context, index) {
-              final String nombreFase = listaFases[index];
-              final List<Map<String, dynamic>> partidosDeLaFase = partidosPorFaseEliminatoria[nombreFase]!;
-
-              return Card(
-                margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-                elevation: 1,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                child: ExpansionTile(
-                  title: Text(nombreFase, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red.shade900, fontSize: 15)),
-                  leading: const Icon(Icons.gavel_outlined, color: Colors.red), // Icono de eliminación directa
-                  trailing: Text('${partidosDeLaFase.length} partidos', style: const TextStyle(color: Colors.grey, fontSize: 11)),
-                  children: partidosDeLaFase.map((partido) {
-                    return TarjetaPartidoAdmin(partido: partido);
-                  }).toList(),
-                ),
-              );
-            },
-          );
-        }
-
-        // === CASO 3: PESTAÑA DE FINALES (Mantiene lista corrida por ser pocos partidos) ===
         return ListView.builder(
-          padding: const EdgeInsets.only(top: 8, bottom: 40),
+          padding: const EdgeInsets.only(top: 8, bottom: 24),
           itemCount: partidosDocs.length,
           itemBuilder: (context, index) {
-            final partido = partidosDocs[index].data() as Map<String, dynamic>;
-            return TarjetaPartidoAdmin(partido: partido);
+            final idPartido = partidosDocs[index].id;
+            final partidoData = partidosDocs[index].data() as Map<String, dynamic>;
+            
+            return TarjetaPartidoAdmin(idPartido: idPartido, partido: partidoData);
           },
         );
       },
     );
   }
-
-  Widget _buildSelectorBarAdmin() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            _verPorJornada ? '📅 Modo: Filtrar por Jornada' : '🗂️ Modo: Filtrar por Grupo',
-            style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black54, fontSize: 13),
-          ),
-          ActionChip(
-            avatar: Icon(_verPorJornada ? Icons.grid_view : Icons.calendar_month, size: 16, color: Colors.black87),
-            backgroundColor: _verPorJornada ? Colors.amber.shade200 : Colors.red.shade50,
-            label: Text(_verPorJornada ? 'Ver Grupos' : 'Ver Jornadas', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-            onPressed: () {
-              setState(() {
-                _verPorJornada = !_verPorJornada;
-              });
-            },
-          ),
-        ],
-      ),
-    );
-  }
 }
 
-// --- WIDGET DE SOPORTE: TARJETA DE MARCADOR OFICIAL CON EDICIÓN DE EQUIPOS PARA FASES FINALES ---
+// --- WIDGET: TARJETA DE EDICIÓN DEL ADMIN CON MEJORAS DE TRADUCCIÓN Y HORA ---
 class TarjetaPartidoAdmin extends StatefulWidget {
+  final String idPartido;
   final Map<String, dynamic> partido;
-  const TarjetaPartidoAdmin({super.key, required this.partido});
+
+const TarjetaPartidoAdmin({super.key, required this.idPartido, required this.partido});
 
   @override
   State<TarjetaPartidoAdmin> createState() => _TarjetaPartidoAdminState();
 }
 
 class _TarjetaPartidoAdminState extends State<TarjetaPartidoAdmin> {
-  final TextEditingController _localController = TextEditingController();
-  final TextEditingController _visitanteController = TextEditingController();
-  bool _guardando = false;
+  final TextEditingController _localResultController = TextEditingController();
+  final TextEditingController _visitanteResultController = TextEditingController();
+  bool _actualizando = false;
+
+  // 🌍 DICCIONARIO DE TRADUCCIÓN IDÉNTICO PARA EVITAR NOMBRES EN INGLÉS
+  final Map<String, String> _paisesEnEspanol = {
+    'Mexico': 'México',
+    'South Africa': 'Sudáfrica',
+    'South Korea': 'Corea del Sur',
+    'Czech Republic': 'República Checa',
+    'Canada': 'Canadá',
+    'DR Congo': 'RD Congo',
+    'Uzbekistan': 'Uzbekistán',
+    'Colombia': 'Colombia',
+    'England': 'Inglaterra',
+    'Croatia': 'Croacia',
+    'Jamaica': 'Jamaica',
+    'Bolivia': 'Bolivia',
+    'Suriname': 'Surinam',
+    'Italy': 'Italia',
+    'Northern Ireland': 'Irlanda del Norte',
+    'Wales': 'Gales',
+    'Bosnia & Herzegovina': 'Bosnia',
+    'United States': 'Estados Unidos',
+    'Germany': 'Alemania',
+    'Spain': 'España',
+    'France': 'Francia',
+    'Brazil': 'Brasil',
+    'Argentina': 'Argentina',
+    'Japan': 'Japón',
+    'Netherlands': 'Países Bajos',
+    'Portugal': 'Portugal',
+    'Belgium': 'Bélgica',
+    'Morocco': 'Marruecos',
+    'Switzerland': 'Suiza',
+    'Uruguay': 'Uruguay',
+    'Scotland': 'Escocia',
+    'Turkey': 'Turquía',
+    'Ivory Coast': 'Costa de Marfil',
+    'Curacao': 'Curazao',
+    'Sweden': 'Suecia',
+    'Tunisia': 'Túnez',
+    'Egypt': 'Egipto',
+    'New Zealand': 'Nueva Zelanda',
+    'Saudi Arabia': 'Arabia Saudita',
+    'Norway': 'Noruega',
+    'Jordan': 'Jordania',
+    // Si ves algún otro país en inglés, solo lo agregas a esta lista
+  };
 
   @override
   void initState() {
     super.initState();
-    final local = widget.partido['local'];
-    final visitante = widget.partido['visitante'];
-    
+    // Cargamos los goles oficiales actuales si el partido ya fue jugado
+    final local = widget.partido['local'] ?? {};
+    final visitante = widget.partido['visitante'] ?? {};
     if (widget.partido['jugado'] == true) {
-      _localController.text = local['goles'].toString();
-      _visitanteController.text = visitante['goles'].toString();
+      _localResultController.text = (local['goles'] ?? '').toString();
+      _visitanteResultController.text = (visitante['goles'] ?? '').toString();
     }
   }
 
   @override
   void dispose() {
-    _localController.dispose();
-    _visitanteController.dispose();
+    _localResultController.dispose();
+    _visitanteResultController.dispose();
     super.dispose();
   }
 
   Future<void> _guardarResultadoOficial() async {
-    if (_localController.text.isEmpty || _visitanteController.text.isEmpty) return;
+    if (_localResultController.text.isEmpty || _visitanteResultController.text.isEmpty) return;
 
-    setState(() => _guardando = true);
+    setState(() => _actualizando = true);
 
-    int golesLocal = int.parse(_localController.text);
-    int golesVisitante = int.parse(_visitanteController.text);
+    try {
+      // Guardamos el marcador real definitivo en el documento del partido
+      await FirebaseFirestore.instance.collection('partidos').doc(widget.idPartido).update({
+        'jugado': true,
+        'local.goles': int.parse(_localResultController.text),
+        'visitante.goles': int.parse(_visitanteResultController.text),
+      });
 
-    await FirebaseFirestore.instance.collection('partidos').doc(widget.partido['id']).update({
-      'jugado': true,
-      'local.goles': golesLocal,
-      'visitante.goles': golesVisitante,
-    });
-
-    await Future.delayed(const Duration(milliseconds: 300));
-    if (mounted) setState(() => _guardando = false);
-  }
-
-  // 🛠️ FUNCIÓN PARA MOSTRAR EL DIÁLOGO DE EDICIÓN DE EQUIPOS (OPCIÓN B)
-  void _mostrarDialogoEditarEquipos() {
-    final TextEditingController localNombreCtrl = TextEditingController(text: widget.partido['local']['nombre']);
-    final TextEditingController visitanteNombreCtrl = TextEditingController(text: widget.partido['visitante']['nombre']);
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text('Definir Cruce: ID ${widget.partido['id']}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: localNombreCtrl,
-                decoration: const InputDecoration(labelText: 'Equipo Local (Ej: Guatemala)', prefixIcon: Icon(Icons.flag_outlined)),
-              ),
-              const SizedBox(height: 12),
-              const Text('vs', style: TextStyle(color: Colors.grey)),
-              const SizedBox(height: 12),
-              TextField(
-                controller: visitanteNombreCtrl,
-                decoration: const InputDecoration(labelText: 'Equipo Visitante (Ej: Argentina)', prefixIcon: Icon(Icons.flag_outlined)),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade800, foregroundColor: Colors.white),
-              onPressed: () async {
-                if (localNombreCtrl.text.trim().isEmpty || visitanteNombreCtrl.text.trim().isEmpty) return;
-                
-                Navigator.pop(context);
-                setState(() => _guardando = true);
-
-                // Actualizamos únicamente los nombres de los contrincantes en Firestore
-                await FirebaseFirestore.instance.collection('partidos').doc(widget.partido['id']).update({
-                  'local.nombre': localNombreCtrl.text.trim(),
-                  'visitante.nombre': visitanteNombreCtrl.text.trim(),
-                });
-
-                if (mounted) setState(() => _guardando = false);
-              },
-              child: const Text('Guardar Equipos'),
-            ),
-          ],
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('⚽ Resultado oficial guardado con éxito. ¡Puntos calculados!'), backgroundColor: Colors.green),
         );
-      },
-    );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al actualizar: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _actualizando = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final local = widget.partido['local'];
-    final visitante = widget.partido['visitante'];
+    final local = widget.partido['local'] ?? {};
+    final visitante = widget.partido['visitante'] ?? {};
     final bool yaJugado = widget.partido['jugado'] ?? false;
 
-    final String faseOriginal = widget.partido['fase'].toString();
-    final String faseTraducida = faseOriginal.replaceAll('Matchday', 'Jornada');
-    final String grupoTraducido = widget.partido['grupo'] != '' 
-        ? widget.partido['grupo'].toString().replaceAll('Group', 'Grupo') 
-        : '';
+    // 🌟 1. APLICAMOS LA TRADUCCIÓN DE PAÍSES AUTOMÁTICA
+    final String nombreLocalTraducido = _paisesEnEspanol[local['nombre']] ?? local['nombre'] ?? '';
+    final String nombreVisitanteTraducido = _paisesEnEspanol[visitante['nombre']] ?? visitante['nombre'] ?? '';
 
-    // Condición: Si NO es fase de grupos (Matchday), permitimos editar los nombres de los equipos
-    final bool esFaseFinal = !faseOriginal.startsWith('Matchday');
+    // 🧹 2. LIMPIAMOS EL TEXTO DE LA HORA ELIMINANDO EL MARCADOR UTC
+    final String horaCompleta = widget.partido['hora'] ?? '';
+    final String horaLimpiaMostrar = horaCompleta.isNotEmpty ? horaCompleta.split(' ')[0] : '';
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
-      ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                "$faseTraducida ${grupoTraducido.isNotEmpty ? '• $grupoTraducido' : ''}  [ID: ${widget.partido['id']}]",
-                style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.w500),
-              ),
-              Row(
-                children: [
-                  // Botón de lápiz: Solo aparece en las pestañas de eliminación directa
-                  if (esFaseFinal)
-                    IconButton(
-                      icon: const Icon(Icons.edit_note, size: 18, color: Colors.blue),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      onPressed: _mostrarDialogoEditarEquipos,
-                      tooltip: 'Definir Países Clasificados',
-                    ),
-                  if (esFaseFinal) const SizedBox(width: 10),
-                  if (_guardando)
-                    const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red))
-                  else
-                    Icon(
-                      yaJugado ? Icons.check_circle : Icons.radio_button_unchecked,
-                      size: 14,
-                      color: yaJugado ? Colors.green : Colors.grey,
-                    ),
-                ],
-              )
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: Text(local['nombre'], textAlign: TextAlign.end, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-              ),
-              const SizedBox(width: 10),
-              
-              SizedBox(
-                width: 44,
-                height: 38,
-                child: TextField(
-                  controller: _localController,
-                  keyboardType: TextInputType.number,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.red),
-                  onChanged: (_) => _guardarResultadoOficial(),
-                  decoration: InputDecoration(
-                    contentPadding: EdgeInsets.zero,
-                    filled: true,
-                    fillColor: Colors.red.shade50,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(14.0),
+        child: Column(
+          children: [
+            // Fila de Info Superior
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '${widget.partido['fase']} • ${widget.partido['grupo']}'.replaceAll('Group', 'Grupo'),
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.grey),
+                ),
+                if (yaJugado)
+                  const Icon(Icons.check_circle, color: Colors.green, size: 18)
+                else
+                  const Icon(Icons.gavel, color: Colors.redAccent, size: 18),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // Formulario de Marcadores Oficiales
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    nombreLocalTraducido, // 🌟 Nombre en Español
+                    textAlign: TextAlign.end,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                   ),
                 ),
-              ),
-              
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 6),
-                child: Text(':', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
-              ),
-              
-              SizedBox(
-                width: 44,
-                height: 38,
-                child: TextField(
-                  controller: _visitanteController,
-                  keyboardType: TextInputType.number,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.red),
-                  onChanged: (_) => _guardarResultadoOficial(),
-                  decoration: InputDecoration(
-                    contentPadding: EdgeInsets.zero,
-                    filled: true,
-                    fillColor: Colors.red.shade50,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                const SizedBox(width: 10),
+                
+                // Input Goles Local Oficial
+                SizedBox(
+                  width: 44,
+                  height: 38,
+                  child: TextField(
+                    controller: _localResultController,
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                    decoration: InputDecoration(
+                      contentPadding: EdgeInsets.zero,
+                      filled: true,
+                      fillColor: Colors.red.shade50,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                    ),
                   ),
                 ),
-              ),
-              
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(visitante['nombre'], textAlign: TextAlign.start, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-              ),
-            ],
-          ),
-        ],
+                
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8),
+                  child: Text('vs', style: TextStyle(color: Colors.black38, fontSize: 12)),
+                ),
+                
+                // Input Goles Visitante Oficial
+                SizedBox(
+                  width: 44,
+                  height: 38,
+                  child: TextField(
+                    controller: _visitanteResultController,
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                    decoration: InputDecoration(
+                      contentPadding: EdgeInsets.zero,
+                      filled: true,
+                      fillColor: Colors.red.shade50,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                
+                Expanded(
+                  child: Text(
+                    nombreVisitanteTraducido, // 🌟 Nombre en Español
+                    textAlign: TextAlign.start,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+
+            // Pie de tarjeta con la hora recortada e información de guardado rápido
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.access_time_rounded, size: 12, color: Colors.black45),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Hora: $horaLimpiaMostrar', // 🌟 Muestra "13:00" de forma limpia
+                      style: const TextStyle(fontSize: 11, color: Colors.black54, fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+                _actualizando
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red))
+                    : TextButton.icon(
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.red.shade900,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          backgroundColor: Colors.red.shade50,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        icon: const Icon(Icons.save, size: 14),
+                        label: Text(yaJugado ? 'Modificar' : 'Cerrar Partido', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        onPressed: _guardarResultadoOficial,
+                      ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
