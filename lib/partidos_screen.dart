@@ -3,9 +3,49 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'admin_screen.dart'; 
 import 'tablero_screen.dart'; 
+import 'dart:async'; // 🌟 Para usar el Timer
+import 'dart:convert'; // 🌟 Para leer la respuesta de internet
+import 'package:http/http.dart' as http; // 🌟 Para pedir la hora real
 
-class PartidosScreen extends StatelessWidget {
+// 🛡️ VARIABLE GLOBAL ANTI-TRAMPAS
+Duration desfaseHorario = Duration.zero; 
+
+// 🛡️ FUNCIÓN QUE PREGUNTA LA HORA A INTERNET (COMPATIBLE CON WEB Y MÓVIL)
+Future<void> sincronizarRelojSeguro() async {
+  try {
+    final response = await http.get(Uri.parse('https://worldtimeapi.org/api/timezone/Etc/UTC'));
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      // Hora real y absoluta del servidor mundial
+      DateTime horaRealInternet = DateTime.parse(data['utc_datetime']);
+      // Hora del dispositivo convertida a UTC
+      DateTime horaFalsaTelefono = DateTime.now().toUtc();
+      
+      // Guardamos la diferencia. Si el usuario atrasó su reloj 2 horas, esto lo compensará.
+      desfaseHorario = horaRealInternet.difference(horaFalsaTelefono);
+    }
+  } catch (e) {
+    debugPrint('Error sincronizando hora web: $e');
+  }
+}
+
+
+// --- WIDGET 1: TRANSFORMAMOS TU CLASE A STATEFUL PARA PODER USAR INITSTATE
+class PartidosScreen extends StatefulWidget {
   const PartidosScreen({super.key});
+
+  @override
+  State<PartidosScreen> createState() => _PartidosScreenState();
+}
+
+class _PartidosScreenState extends State<PartidosScreen> {
+  
+  @override
+  void initState() {
+    super.initState();
+    // ⏰ Sincronizamos el reloj mundial al entrar a la app
+    sincronizarRelojSeguro();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -124,6 +164,7 @@ class PartidosScreen extends StatelessWidget {
                 Expanded(
                   child: TabBarView(
                     children: [
+                      // NOTA: Asegúrate de que _ListaPartidosFiltrada esté definida más abajo
                       _ListaPartidosFiltrada(uidUsuario: uidUsuario, tipoFase: 'Grupos'),
                       _ListaPartidosFiltrada(uidUsuario: uidUsuario, tipoFase: 'Eliminatorias'),
                       _ListaPartidosFiltrada(uidUsuario: uidUsuario, tipoFase: 'Finales'),
@@ -446,63 +487,47 @@ class TarjetaPartido extends StatefulWidget {
 class _TarjetaPartidoState extends State<TarjetaPartido> {
   final TextEditingController _localController = TextEditingController();
   final TextEditingController _visitanteController = TextEditingController();
+  
   // 🌍 DICCIONARIO DE TRADUCCIÓN DE PAÍSES
   final Map<String, String> _paisesEnEspanol = {
-    'Mexico': 'México',
-    'South Africa': 'Sudáfrica',
-    'South Korea': 'Corea del Sur',
-    'Czech Republic': 'República Checa',
-    'Canada': 'Canadá',
-    'DR Congo': 'RD Congo',
-    'Uzbekistan': 'Uzbekistán',
-    'Colombia': 'Colombia',
-    'England': 'Inglaterra',
-    'Croatia': 'Croacia',
-    'Jamaica': 'Jamaica',
-    'Bolivia': 'Bolivia',
-    'Suriname': 'Surinam',
-    'Italy': 'Italia',
-    'Northern Ireland': 'Irlanda del Norte',
-    'Wales': 'Gales',
-    'Bosnia & Herzegovina': 'Bosnia',
-    'United States': 'Estados Unidos',
-    'Germany': 'Alemania',
-    'Spain': 'España',
-    'France': 'Francia',
-    'Brazil': 'Brasil',
-    'Argentina': 'Argentina',
-    'Japan': 'Japón',
-    'Netherlands': 'Países Bajos',
-    'Portugal': 'Portugal',
-    'Belgium': 'Bélgica',
-    'Morocco': 'Marruecos',
-    'Switzerland': 'Suiza',
-    'Uruguay': 'Uruguay',
-    'Scotland': 'Escocia',
-    'Turkey': 'Turquía',
-    'Ivory Coast': 'Costa de Marfil',
-    'Curacao': 'Curazao',
-    'Sweden': 'Suecia',
-    'Tunisia': 'Túnez',
-    'Egypt': 'Egipto',
-    'New Zealand': 'Nueva Zelanda',
-    'Saudi Arabia': 'Arabia Saudita',
-    'Norway': 'Noruega',
-    'Jordan': 'Jordania',
-    // Si ves algún otro país en inglés, solo lo agregas a esta lista
+    'Mexico': 'México', 'South Africa': 'Sudáfrica', 'South Korea': 'Corea del Sur',
+    'Czech Republic': 'República Checa', 'Canada': 'Canadá', 'DR Congo': 'RD Congo',
+    'Uzbekistan': 'Uzbekistán', 'Colombia': 'Colombia', 'England': 'Inglaterra',
+    'Croatia': 'Croacia', 'Jamaica': 'Jamaica', 'Bolivia': 'Bolivia',
+    'Suriname': 'Surinam', 'Italy': 'Italia', 'Northern Ireland': 'Irlanda del Norte',
+    'Wales': 'Gales', 'Bosnia & Herzegovina': 'Bosnia', 'United States': 'Estados Unidos',
+    'Germany': 'Alemania', 'Spain': 'España', 'France': 'Francia', 'Brazil': 'Brasil',
+    'Argentina': 'Argentina', 'Japan': 'Japón', 'Netherlands': 'Países Bajos',
+    'Portugal': 'Portugal', 'Belgium': 'Bélgica', 'Morocco': 'Marruecos',
+    'Switzerland': 'Suiza', 'Uruguay': 'Uruguay', 'Scotland': 'Escocia',
+    'Turkey': 'Turquía', 'Ivory Coast': 'Costa de Marfil', 'Curacao': 'Curazao',
+    'Sweden': 'Suecia', 'Tunisia': 'Túnez', 'Egypt': 'Egipto',
+    'New Zealand': 'Nueva Zelanda', 'Saudi Arabia': 'Arabia Saudita',
+    'Norway': 'Noruega', 'Jordan': 'Jordania',
   };
+  
   bool _guardando = false;
   bool _tiempoBloqueado = false; 
+  Timer? _timerAutoBloqueo; 
+
+  // 🌟 NUEVAS VARIABLES PARA LOS COLORES
+  bool _prediccionRealizada = false;
+  int _puntosObtenidos = 0;
 
   @override
   void initState() {
     super.initState();
     _revisarBloqueoDeTiempo();
     _cargarPrediccionExistente();
+    
+    _timerAutoBloqueo = Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (mounted) _revisarBloqueoDeTiempo();
+    });
   }
 
   @override
   void dispose() {
+    _timerAutoBloqueo?.cancel(); 
     _localController.dispose();
     _visitanteController.dispose();
     super.dispose();
@@ -528,13 +553,15 @@ class _TarjetaPartidoState extends State<TarjetaPartido> {
 
       final DateTime horaBase = DateTime.parse('${fechaStr}T$horaLimpia:00Z');
       final DateTime horaPartidoEnUTC = horaBase.subtract(Duration(hours: offsetHoras));
-      final DateTime ahoraEnUTC = DateTime.now().toUtc();
-      final int diferenciaMinutos = horaPartidoEnUTC.difference(ahoraEnUTC).inMinutes;
+      final DateTime ahoraRealEnUTC = DateTime.now().toUtc().add(desfaseHorario);
+      final int diferenciaMinutos = horaPartidoEnUTC.difference(ahoraRealEnUTC).inMinutes;
 
-      if (diferenciaMinutos < 15) {
-        setState(() {
-          _tiempoBloqueado = true;
-        });
+      if (diferenciaMinutos <= 15) {
+        if (!_tiempoBloqueado && mounted) { 
+          setState(() {
+            _tiempoBloqueado = true;
+          });
+        }
       }
     } catch (e) {
       _tiempoBloqueado = false;
@@ -566,6 +593,10 @@ class _TarjetaPartidoState extends State<TarjetaPartido> {
         setState(() {
           _localController.text = datos['golesLocal'].toString();
           _visitanteController.text = datos['golesVisitante'].toString();
+          
+          // 🌟 RECUPERAMOS LOS PUNTOS PARA PINTAR LA TARJETA
+          _puntosObtenidos = datos['puntosGanados'] ?? 0;
+          _prediccionRealizada = true;
         });
       }
     }
@@ -574,7 +605,11 @@ class _TarjetaPartidoState extends State<TarjetaPartido> {
   Future<void> _guardarVaticinio() async {
     if (_tiempoBloqueado || _localController.text.isEmpty || _visitanteController.text.isEmpty) return;
 
-    setState(() => _guardando = true);
+    setState(() {
+      _guardando = true;
+      _prediccionRealizada = true; 
+    });
+    
     String idPrediccion = "${widget.uidUsuario}_${widget.partido['id']}";
     
     await FirebaseFirestore.instance.collection('predicciones').doc(idPrediccion).set({
@@ -595,7 +630,6 @@ class _TarjetaPartidoState extends State<TarjetaPartido> {
     final local = widget.partido['local'];
     final visitante = widget.partido['visitante'];
 
-    // 👇 TRADUCCIÓN AL ESPAÑOL (Si no está en la lista, deja el nombre original)
     final String nombreLocal = _paisesEnEspanol[local['nombre']] ?? local['nombre'];
     final String nombreVisitante = _paisesEnEspanol[visitante['nombre']] ?? visitante['nombre'];
 
@@ -607,14 +641,26 @@ class _TarjetaPartidoState extends State<TarjetaPartido> {
         ? widget.partido['grupo'].toString().replaceAll('Group', 'Grupo') 
         : '';
 
-    // 🧹 TRUCO DE LIMPIEZA: Cortamos el texto para mostrar solo la hora sin la zona horaria
     final String horaCompleta = widget.partido['hora'] ?? '';
     final String horaLimpiaMostrar = horaCompleta.isNotEmpty ? horaCompleta.split(' ')[0] : '';
 
+    // 🎨 LÓGICA DE COLORES DE LA TARJETA
+    Color colorFondoTarjeta = Colors.white;
+    if (yaJugado) {
+      if (!_prediccionRealizada || _puntosObtenidos == 0) {
+        colorFondoTarjeta = Colors.red.shade50; // Rojo pastel suave
+      } else if (_puntosObtenidos == 3) {
+        colorFondoTarjeta = Colors.green.shade50; // Verde pastel
+      } else if (_puntosObtenidos == 1) {
+        colorFondoTarjeta = Colors.amber.shade50; // Amarillo/Naranja pastel
+      }
+    }
+
     return Card(
+      color: colorFondoTarjeta, // 🎨 APLICAMOS EL COLOR AL FONDO
       margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      elevation: 2,
+      elevation: yaJugado ? 1 : 2, // Le bajamos la sombra a los ya jugados para que se vean más "inactivos"
       child: Padding(
         padding: const EdgeInsets.all(14.0),
         child: Column(
@@ -639,10 +685,37 @@ class _TarjetaPartidoState extends State<TarjetaPartido> {
                   ],
                 ),
                 if (yaJugado)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.green.shade200)),
-                    child: Text('Oficial: ${local['goles']}-${visitante['goles']}', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 11)),
+                  Row(
+                    children: [
+                      // 🏅 MINI MEDALLA DE PUNTOS OBTENIDOS
+                      Container(
+                        margin: const EdgeInsets.only(right: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: _puntosObtenidos == 3 
+                              ? Colors.green.shade600 
+                              : (_puntosObtenidos == 1 ? Colors.amber.shade600 : Colors.red.shade400),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          '+$_puntosObtenidos pts', 
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10)
+                        ),
+                      ),
+                      // MARCADOR OFICIAL
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.white70, // Fondo semi-blanco para que contraste con la tarjeta de color
+                          borderRadius: BorderRadius.circular(8), 
+                          border: Border.all(color: Colors.grey.shade400)
+                        ),
+                        child: Text(
+                          'Oficial: ${local['goles']}-${visitante['goles']}', 
+                          style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 11)
+                        ),
+                      ),
+                    ],
                   )
                 else if (_tiempoBloqueado)
                   Container(
@@ -664,7 +737,7 @@ class _TarjetaPartidoState extends State<TarjetaPartido> {
             ),
             const SizedBox(height: 14),
 
-            // --- FILA DEL MARCADOR EN VIVO ---
+            // --- FILA DEL MARCADOR (TUS VATICINIOS) ---
             Row(
               children: [
                 Expanded(
@@ -689,7 +762,7 @@ class _TarjetaPartidoState extends State<TarjetaPartido> {
                     decoration: InputDecoration(
                       contentPadding: EdgeInsets.zero,
                       filled: true,
-                      fillColor: inputsDeshabilitados ? Colors.grey.shade100 : Colors.blue.shade50,
+                      fillColor: inputsDeshabilitados ? Colors.white54 : Colors.blue.shade50,
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
                     ),
                   ),
@@ -713,7 +786,7 @@ class _TarjetaPartidoState extends State<TarjetaPartido> {
                     decoration: InputDecoration(
                       contentPadding: EdgeInsets.zero,
                       filled: true,
-                      fillColor: inputsDeshabilitados ? Colors.grey.shade100 : Colors.blue.shade50,
+                      fillColor: inputsDeshabilitados ? Colors.white54 : Colors.blue.shade50,
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
                     ),
                   ),
@@ -731,7 +804,7 @@ class _TarjetaPartidoState extends State<TarjetaPartido> {
             ),
             const SizedBox(height: 16),
             
-            // --- 🏟️ DETALLES EN WRAP RESPETANDO EL RECORTE ---
+            // --- DETALLES EN WRAP ---
             Wrap(
               alignment: WrapAlignment.center,
               crossAxisAlignment: WrapCrossAlignment.center,
@@ -749,7 +822,7 @@ class _TarjetaPartidoState extends State<TarjetaPartido> {
                     ),
                   ],
                 ),
-                Text('•', style: TextStyle(color: Colors.grey.shade300, fontSize: 10)),
+                Text('•', style: TextStyle(color: Colors.grey.shade400, fontSize: 10)),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -761,14 +834,14 @@ class _TarjetaPartidoState extends State<TarjetaPartido> {
                     ),
                   ],
                 ),
-                Text('•', style: TextStyle(color: Colors.grey.shade300, fontSize: 10)),
+                Text('•', style: TextStyle(color: Colors.grey.shade400, fontSize: 10)),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Icon(Icons.access_time_rounded, size: 12, color: Colors.black54),
                     const SizedBox(width: 4),
                     Text(
-                      horaLimpiaMostrar, // 🌟 Renderiza "13:00" en lugar de "13:00 UTC-6"
+                      horaLimpiaMostrar,
                       style: const TextStyle(fontSize: 11, color: Colors.black87, fontWeight: FontWeight.bold)
                     ),
                   ],
