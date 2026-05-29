@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'widgets/lista_admin_partidos.dart';
-import 'utils/admin_dialogs.dart'; // O la carpeta donde lo hayas guardado
+import 'utils/admin_dialogs.dart';
 
 class AdminScreen extends StatelessWidget {
   const AdminScreen({super.key});
